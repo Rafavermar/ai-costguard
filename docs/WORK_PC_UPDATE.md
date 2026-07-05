@@ -1,52 +1,52 @@
-# Actualizar ai-costguard en un PC de empresa
+# Update ai-costguard On A Work PC
 
-Este procedimiento sirve para actualizar una instalacion local de `ai-costguard` en un PC corporativo cuando el codigo llega a traves de un fork empresarial.
+This procedure updates a local `ai-costguard` checkout on a corporate PC when the code is distributed through a company fork.
 
-Flujo recomendado:
+Recommended flow:
 
 ```text
-Repo personal actualizado
-  -> Sync fork en GitHub empresa
-  -> git pull en repo local empresa
+Personal/original repo updated
+  -> Sync fork in company GitHub
+  -> git pull in local company checkout
   -> uv sync
-  -> validaciones offline
+  -> offline validations
 ```
 
-## 1. Objetivo
+## 1. Goal
 
-Actualizar `ai-costguard` en el PC corporativo sin modificar repos de cliente, sin tocar configuracion real innecesariamente y sin consumir tokens LLM.
+Update `ai-costguard` on a corporate PC without modifying client repositories, without touching real local configuration unnecessarily, and without consuming LLM tokens.
 
-Las validaciones de este documento son offline: comprueban CLI, reglas, entorno, tests y estado local. No deben llamar a Cline, Claude Code ni a Generative Engine.
+The validations in this document are offline: they check the CLI, rules, environment, tests, and local state. They should not call Cline, Claude Code, or Generative Engine.
 
-## 2. Supuestos
+## 2. Assumptions
 
-- El repo local de empresa esta en una carpeta tipo:
+- The company local checkout is in a folder similar to:
 
 ```text
-C:\Users\<usuario>\...\Github\AI\ai-costguard
+C:\Users\<user>\...\Github\AI\ai-costguard
 ```
 
-- `origin` apunta al fork corporativo, no necesariamente al repo personal/original.
-- El fork corporativo se sincroniza desde GitHub web usando `Sync fork`.
-- El proyecto usa `uv`.
-- No se recomienda usar `pip` directamente para este flujo.
-- No ejecutes este procedimiento dentro de un repo cliente como `databricks-free-lab`.
+- `origin` points to the company fork, not necessarily to the personal/original repo.
+- The company fork is synchronized from GitHub web using `Sync fork`.
+- The project is managed with `uv`.
+- Do not use `pip` directly for this update flow.
+- Do not run this procedure inside a client repository such as `databricks-free-lab`.
 
-## 3. Sincronizar fork corporativo
+## 3. Sync The Company Fork
 
-1. Abre el fork corporativo de `ai-costguard` en GitHub.
-2. Pulsa `Sync fork`.
-3. Pulsa `Update branch`.
-4. Confirma que el fork queda actualizado con el repo personal/original.
+1. Open the company fork of `ai-costguard` in GitHub.
+2. Click `Sync fork`.
+3. Click `Update branch`.
+4. Confirm that the fork is up to date with the personal/original repo.
 
-No hace falta configurar un upstream local para este flujo. La sincronizacion se hace desde GitHub web para reducir pasos y evitar confusiones en el PC de empresa.
+You do not need to configure a local upstream remote for this flow. The fork is synchronized from GitHub web to keep the work-PC procedure simple and less error-prone.
 
-## 4. Actualizar repo local
+## 4. Update The Local Checkout
 
-Abre PowerShell y situa la terminal en el repo local de `ai-costguard`, no en un repo cliente:
+Open PowerShell and move to the local `ai-costguard` checkout, not to a client repo:
 
 ```powershell
-Set-Location "RUTA_AL_REPO\ai-costguard"
+Set-Location "PATH_TO_REPO\ai-costguard"
 
 git remote -v
 git status
@@ -57,19 +57,19 @@ git pull --ff-only origin main
 git log --oneline -10
 ```
 
-Evidencia esperada:
+Expected evidence:
 
-- `origin` apunta al fork corporativo.
-- La rama activa es `main`.
-- `git status` no muestra cambios locales pendientes antes de actualizar.
-- `git pull --ff-only origin main` termina sin merge manual.
-- `git log --oneline -10` muestra commits recientes esperados.
+- `origin` points to the company fork.
+- The active branch is `main`.
+- `git status` shows no pending local changes before the update.
+- `git pull --ff-only origin main` completes without a manual merge.
+- `git log --oneline -10` shows the expected recent commits.
 
-Si `git pull --ff-only` falla por cambios locales, no ejecutes `git reset --hard` sin backup y sin entender que cambios se perderian.
+If `git pull --ff-only` fails because of local changes, do not run `git reset --hard` without a backup and without understanding which changes would be lost.
 
-## 5. Parar CostGuard antes de actualizar entorno
+## 5. Stop CostGuard Before Updating The Environment
 
-Antes de recrear `.venv`, para CostGuard si estaba arrancado:
+Before recreating `.venv`, stop CostGuard if it was running:
 
 ```powershell
 costguard stop
@@ -77,15 +77,15 @@ costguard stop
 Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path
 ```
 
-Interpretacion:
+How to interpret this:
 
-- Si no devuelve procesos, se puede continuar.
-- Si devuelve procesos `python`, `costguard` o `uv`, pueden estar bloqueando `.venv`.
-- No mates procesos a ciegas. Comprueba la ruta `Path` y confirma que pertenecen a este repo o a CostGuard antes de cerrarlos.
+- If no processes are returned, you can continue.
+- If `python`, `costguard`, or `uv` processes are returned, they may be locking `.venv`.
+- Do not kill processes blindly. Check the `Path` value and confirm they belong to this repo or to CostGuard before closing them.
 
-## 6. Recrear entorno limpio con uv
+## 6. Recreate A Clean uv Environment
 
-Desde el repo local de `ai-costguard`:
+From the local `ai-costguard` checkout:
 
 ```powershell
 Remove-Item -Recurse -Force .\.venv
@@ -93,26 +93,26 @@ Remove-Item -Recurse -Force .\.venv
 uv sync --extra dev --extra headroom
 ```
 
-Usamos recreacion limpia porque en pruebas reales ha evitado problemas de entornos inconsistentes, `missing RECORD file`, paquetes a medio instalar y errores de `Acceso denegado`.
+We recreate the environment cleanly because real work-PC testing showed that it avoids inconsistent environments, `missing RECORD file`, half-installed packages, and `Access denied` errors.
 
-Evidencia esperada:
+Expected evidence:
 
-- Aparece algo equivalente a `Creating virtual environment at: .venv`.
-- Se instalan paquetes desde el proyecto local.
-- `ai-costguard` queda instalado desde una ruta tipo `file:///.../ai-costguard`.
-- `headroom-ai` aparece instalado si se usa el extra `headroom`.
-- No aparecen warnings tipo `missing RECORD file`.
-- No aparecen errores de `Acceso denegado`.
+- Output equivalent to `Creating virtual environment at: .venv`.
+- Packages are installed from the local project.
+- `ai-costguard` is installed from a path like `file:///.../ai-costguard`.
+- `headroom-ai` is installed when the `headroom` extra is used.
+- No `missing RECORD file` warnings appear.
+- No `Access denied` errors appear.
 
-Si `Remove-Item` falla, vuelve a la seccion anterior y revisa procesos vivos.
+If `Remove-Item` fails, go back to the previous section and check for live processes.
 
-## 7. Validar CLI actualizada
+## 7. Validate The Updated CLI
 
 ```powershell
 uv run costguard --help
 ```
 
-Comandos esperados:
+Expected commands:
 
 - `setup`
 - `start`
@@ -127,11 +127,11 @@ Comandos esperados:
 - `headroom`
 - `pricing`
 
-Si `costguard` no aparece, usa siempre `uv run costguard ...` dentro del repo y evita mezclar con instalaciones globales antiguas.
+If `costguard` is not available globally, use `uv run costguard ...` from inside the repo and avoid mixing it with older global installations.
 
-## 8. Validaciones offline sin consumir tokens
+## 8. Offline Validations Without Consuming Tokens
 
-Estas validaciones no deben llamar a LLMs ni consumir cuota de Generative Engine:
+These validations should not call LLMs or consume Generative Engine quota:
 
 ```powershell
 uv run pytest
@@ -147,18 +147,18 @@ uv run costguard headroom status
 uv run costguard cache status
 ```
 
-Evidencia esperada:
+Expected evidence:
 
-- `pytest` pasa.
-- `cat .env` queda bloqueado.
-- `git diff` y `find .` se reescriben a comandos mas pequenos.
-- `pricing status`, `headroom status` y `cache status` muestran estado local.
+- `pytest` passes.
+- `cat .env` is blocked.
+- `git diff` and `find .` are rewritten to smaller commands.
+- `pricing status`, `headroom status`, and `cache status` show local state.
 
-No pruebes Cline contra el modelo durante esta fase si la cuota esta agotada o si solo quieres validar la actualizacion local.
+Do not test Cline against the model during this phase if quota is exhausted or if you only need to validate the local update.
 
-## 9. Validacion aislada opcional
+## 9. Optional Isolated Validation
 
-Para validar `setup` sin tocar `~/.costguard`, `~/.claude` ni configuracion real de Claude Code, usa rutas temporales dentro del repo:
+To validate `setup` without touching `~/.costguard`, `~/.claude`, or real Claude Code configuration, use temporary paths inside the repo:
 
 ```powershell
 $env:COSTGUARD_HOME = "$(Get-Location)\.tmp\costguard"
@@ -170,89 +170,89 @@ uv run costguard status
 uv run costguard cline-config
 ```
 
-Esta validacion aislada no debe modificar configuracion real de Claude Code. Al usar `--tool cline`, CostGuard solo imprime configuracion para Cline y mantiene la prueba dentro de `COSTGUARD_HOME`.
+This isolated validation should not modify real Claude Code configuration. With `--tool cline`, CostGuard only prints Cline configuration and keeps the test inside `COSTGUARD_HOME`.
 
-## 10. Que no hacer
+## 10. What Not To Do
 
-- No ejecutes este procedimiento dentro de repos cliente.
-- No uses `pip install` directamente salvo que un runbook especifico lo indique.
-- No ejecutes `git reset --hard` sin backup.
-- No toques `~/.claude/settings.json` sin confirmacion explicita.
-- No pegues secretos en terminal, issues, logs ni chats.
-- No pruebes Cline contra el modelo si la cuota de Generative Engine esta agotada.
-- No uses `Retry` en Cline si aparece `payload blocked by secret filter`; usa `Start New Task`.
+- Do not run this procedure inside client repositories.
+- Do not use `pip install` directly unless a specific runbook says so.
+- Do not run `git reset --hard` without a backup.
+- Do not edit `~/.claude/settings.json` without explicit confirmation.
+- Do not paste secrets into terminals, issues, logs, or chats.
+- Do not test Cline against the model if Generative Engine quota is exhausted.
+- Do not use `Retry` in Cline when `payload blocked by secret filter` appears; use `Start New Task`.
 
 ## 11. Troubleshooting
 
-### Caso: `uv sync` falla con `Acceso denegado`
+### Case: `uv sync` Fails With `Access denied`
 
-Para CostGuard:
+Stop CostGuard:
 
 ```powershell
 costguard stop
 ```
 
-Comprueba procesos:
+Check processes:
 
 ```powershell
 Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path
 ```
 
-Si no hay procesos relevantes, borra `.venv` y repite `uv sync`:
+If there are no relevant processes, delete `.venv` and repeat `uv sync`:
 
 ```powershell
 Remove-Item -Recurse -Force .\.venv
 uv sync --extra dev --extra headroom
 ```
 
-### Caso: warning `missing RECORD file`
+### Case: `missing RECORD file` Warning
 
-Recrea `.venv` con `uv`:
+Recreate `.venv` with `uv`:
 
 ```powershell
 Remove-Item -Recurse -Force .\.venv
 uv sync --extra dev --extra headroom
 ```
 
-### Caso: `pip` no existe en `.venv`
+### Case: `pip` Does Not Exist In `.venv`
 
-Es esperado si el entorno se gestiona con `uv`. Usa:
+This is expected when the environment is managed with `uv`. Use:
 
 ```powershell
 uv run costguard --help
 uv run pytest
 ```
 
-### Caso: `429 true` desde Cline
+### Case: `429 true` From Cline
 
-Suele ser limite o cuota del proveedor Generative Engine, no necesariamente un bloqueo de CostGuard.
+This is usually a Generative Engine provider limit or quota issue, not necessarily a CostGuard block.
 
-Acciones posibles:
+Possible actions:
 
-- Esperar al reset de cuota.
-- Cambiar credenciales o tier si aplica.
-- Validar offline con `uv run pytest` y comandos `costguard` sin llamar al modelo.
+- Wait for quota reset.
+- Change credentials or tier if applicable.
+- Validate offline with `uv run pytest` and `costguard` commands without calling the model.
 
-### Caso: `payload blocked by secret filter`
+### Case: `payload blocked by secret filter`
 
-Puede deberse a contexto acumulado en Cline.
+This can be caused by accumulated Cline context.
 
-Acciones recomendadas:
+Recommended actions:
 
-- Abre `Start New Task`.
-- Prueba un prompt minimo como `Di OK`.
-- No uses `Retry` como primer diagnostico, porque puede reenviar el mismo contexto acumulado.
+- Open `Start New Task`.
+- Try a minimal prompt such as `Say OK`.
+- Do not use `Retry` as the first diagnostic step because it may resend the same accumulated context.
 
-## 12. Checklist final
+## 12. Final Checklist
 
-- [ ] Fork corporativo sincronizado desde GitHub.
-- [ ] Repo local actualizado con `git pull --ff-only`.
-- [ ] `costguard stop` ejecutado.
-- [ ] Sin procesos `python`, `uv` o `costguard` bloqueando.
-- [ ] `.venv` recreado con `uv`.
-- [ ] `uv run costguard --help` muestra `pricing`, `headroom` y `cache`.
-- [ ] `pytest` pasa.
-- [ ] `rules test` funciona.
-- [ ] `pricing status` funciona.
-- [ ] No se tocaron repos cliente.
-- [ ] No se consumieron tokens LLM durante validaciones offline.
+- [ ] Company fork synchronized from GitHub.
+- [ ] Local checkout updated with `git pull --ff-only`.
+- [ ] `costguard stop` executed.
+- [ ] No `python`, `uv`, or `costguard` processes are locking `.venv`.
+- [ ] `.venv` recreated with `uv`.
+- [ ] `uv run costguard --help` shows `pricing`, `headroom`, and `cache`.
+- [ ] `pytest` passes.
+- [ ] `rules test` works.
+- [ ] `pricing status` works.
+- [ ] No client repositories were touched.
+- [ ] No LLM tokens were consumed during offline validations.

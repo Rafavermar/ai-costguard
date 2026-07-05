@@ -213,7 +213,7 @@ costguard uninstall --yes
 ## Documentation
 
 - `docs/RUNBOOK.md`: step-by-step operating guide.
-- `docs/WORK_PC_UPDATE.md`: Spanish work-PC update procedure for corporate forks using `uv`.
+- `docs/WORK_PC_UPDATE.md`: work-PC update procedure for corporate forks using `uv`.
 - `docs/ARCHITECTURE.md`: local proxy architecture and data flow.
 - `docs/SECURITY.md`: security model and local data handling.
 - `docs/TROUBLESHOOTING.md`: common failures and fixes.
