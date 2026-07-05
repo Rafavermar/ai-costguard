@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from . import claude_code, config, paths
+from . import claude_code, config, headroom as headroom_mod, paths
 from .sqlite_store import init_db
 from .utils import copy_file, ensure_dir, make_executable, write_text_if_changed, write_yaml
 
@@ -62,6 +62,12 @@ def setup_costguard(
     home = paths.costguard_home()
     claude_home = paths.claude_home()
     planned: list[str] = []
+    if headroom_enabled and not headroom_mod.compatible():
+        raise RuntimeError(
+            "Headroom was requested but no compatible adapter was found. "
+            "Install a Python module named headroom exposing one of: "
+            f"{', '.join(headroom_mod.ADAPTER_FUNCTIONS)}."
+        )
 
     for directory in DIRECTORIES:
         ensure_dir(home / directory, dry_run=dry_run)

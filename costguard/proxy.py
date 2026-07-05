@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from . import budget, config, paths, rules
+from . import budget, config, headroom, paths, rules
 from .sqlite_store import record_usage
 
 
@@ -118,6 +118,16 @@ class CostGuardHandler(BaseHTTPRequestHandler):
 
         model_alias = payload.get("model") or config.load_settings(self.home).get("active_model", "cg-standard")
         payload["model"] = config.model_for_client(model_alias, "cline" if client == "cline" else "claude-code", env)
+        headroom_rule = None
+        try:
+            headroom_result = headroom.transform_payload(payload, client, self.home)
+        except RuntimeError as exc:
+            _json_response(self, 500, {"error": str(exc)})
+            return
+        payload = headroom_result.payload
+        if headroom_result.applied:
+            headroom_rule = f"headroom:{headroom_result.adapter}"
+        body_text = json.dumps(payload)
 
         input_chars = len(body_text)
         estimated_tokens = budget.estimate_tokens(input_chars)
@@ -133,6 +143,7 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                     "output_chars": 0,
                     "estimated_tokens": estimated_tokens,
                     "estimated_cost": estimated_cost,
+                    "rule_applied": headroom_rule,
                     "budget_action": decision.action,
                     "active_budget": decision.mode,
                     "security_event": security_event,
@@ -196,6 +207,7 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                     self.home,
                     output_tokens=budget.estimate_tokens(output_chars),
                 ),
+                "rule_applied": headroom_rule,
                 "budget_action": decision.action,
                 "active_budget": decision.mode,
                 "security_event": security_event,

@@ -62,25 +62,29 @@ def setup(
     if cache_mode not in {"disabled", "basic", "semantic"}:
         console.print("[red]Cache mode must be disabled, basic, or semantic.[/red]")
         raise typer.Exit(code=1)
-    result = setup_costguard(
-        tool=tool,
-        daily_budget=daily_budget,
-        monthly_budget=monthly_budget,
-        budget_mode=budget_mode,
-        non_interactive=non_interactive,
-        dry_run=paths.dry_run_enabled(dry_run),
-        openai_upstream_base_url=openai_upstream_base_url,
-        anthropic_upstream_base_url=anthropic_upstream_base_url,
-        openai_model_cheap=openai_model_cheap,
-        openai_model_standard=openai_model_standard,
-        openai_model_strong=openai_model_strong,
-        openai_model_sonnet=openai_model_sonnet,
-        anthropic_model_standard=anthropic_model_standard,
-        anthropic_model_sonnet=anthropic_model_sonnet,
-        cache_mode=cache_mode,
-        headroom_enabled=headroom_enabled,
-        autostart_enabled=autostart_enabled,
-    )
+    try:
+        result = setup_costguard(
+            tool=tool,
+            daily_budget=daily_budget,
+            monthly_budget=monthly_budget,
+            budget_mode=budget_mode,
+            non_interactive=non_interactive,
+            dry_run=paths.dry_run_enabled(dry_run),
+            openai_upstream_base_url=openai_upstream_base_url,
+            anthropic_upstream_base_url=anthropic_upstream_base_url,
+            openai_model_cheap=openai_model_cheap,
+            openai_model_standard=openai_model_standard,
+            openai_model_strong=openai_model_strong,
+            openai_model_sonnet=openai_model_sonnet,
+            anthropic_model_standard=anthropic_model_standard,
+            anthropic_model_sonnet=anthropic_model_sonnet,
+            cache_mode=cache_mode,
+            headroom_enabled=headroom_enabled,
+            autostart_enabled=autostart_enabled,
+        )
+    except RuntimeError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
     console.print(f"Cost Guard home: {result['home']}")
     if result["dry_run"]:
         console.print("Dry run only. Planned paths:")
