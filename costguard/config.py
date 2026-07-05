@@ -14,10 +14,9 @@ MODEL_ALIASES = {
     "cheap": "cg-cheap",
     "standard": "cg-standard",
     "strong": "cg-strong",
-    "sonnet": "cg-sonnet",
 }
 
-PREMIUM_ALIASES = {"cg-strong", "cg-sonnet"}
+PREMIUM_ALIASES = {"cg-strong"}
 
 DEFAULT_ENV = {
     "COSTGUARD_HOST": "127.0.0.1",
@@ -28,11 +27,11 @@ DEFAULT_ENV = {
     "OPENAI_MODEL_CHEAP": "",
     "OPENAI_MODEL_STANDARD": "",
     "OPENAI_MODEL_STRONG": "",
-    "OPENAI_MODEL_SONNET": "",
     "ANTHROPIC_UPSTREAM_BASE_URL": "",
     "ANTHROPIC_UPSTREAM_API_KEY": "",
+    "ANTHROPIC_MODEL_CHEAP": "",
     "ANTHROPIC_MODEL_STANDARD": "",
-    "ANTHROPIC_MODEL_SONNET": "",
+    "ANTHROPIC_MODEL_STRONG": "",
     "COSTGUARD_DEFAULT_MODEL": "cg-standard",
     "COSTGUARD_LOG_CONTENT": "false",
     "COSTGUARD_ENABLE_SECRET_FILTER": "true",
@@ -64,7 +63,6 @@ DEFAULT_SETTINGS = {
         "cg-cheap": 0.0002,
         "cg-standard": 0.001,
         "cg-strong": 0.003,
-        "cg-sonnet": 0.003,
     },
 }
 
@@ -158,11 +156,11 @@ def model_for_client(alias: str, client: str, env: dict[str, str] | None = None)
             "cg-cheap": values.get("OPENAI_MODEL_CHEAP", ""),
             "cg-standard": values.get("OPENAI_MODEL_STANDARD", ""),
             "cg-strong": values.get("OPENAI_MODEL_STRONG", ""),
-            "cg-sonnet": values.get("OPENAI_MODEL_SONNET", ""),
         }
     else:
         mapping = {
+            "cg-cheap": values.get("ANTHROPIC_MODEL_CHEAP", ""),
             "cg-standard": values.get("ANTHROPIC_MODEL_STANDARD", ""),
-            "cg-sonnet": values.get("ANTHROPIC_MODEL_SONNET", ""),
+            "cg-strong": values.get("ANTHROPIC_MODEL_STRONG", ""),
         }
     return mapping.get(alias, "") or alias

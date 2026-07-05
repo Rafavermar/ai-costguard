@@ -13,9 +13,9 @@ from costguard.utils import write_yaml
 def test_parse_catalog_supports_generic_model_prices():
     payload = [
         {
-            "provider": "bedrock",
-            "name": "anthropic.claude-sonnet-4-6",
-            "systemName": "eu.anthropic.claude-sonnet-4-6",
+            "provider": "provider",
+            "name": "provider.model-large",
+            "systemName": "region.provider.model-large",
             "inputPrice": 3.3,
             "outputPrice": 16.5,
             "cachedTokenReadPrice": 0.33,
@@ -25,10 +25,10 @@ def test_parse_catalog_supports_generic_model_prices():
 
     parsed = pricing.parse_catalog(payload)
 
-    assert parsed["eu.anthropic.claude-sonnet-4-6"]["input_per_million"] == 3.3
-    assert parsed["eu.anthropic.claude-sonnet-4-6"]["output_per_million"] == 16.5
-    assert parsed["eu.anthropic.claude-sonnet-4-6"]["cached_read_per_million"] == 0.33
-    assert parsed["anthropic.claude-sonnet-4-6"]["input_per_million"] == 3.3
+    assert parsed["region.provider.model-large"]["input_per_million"] == 3.3
+    assert parsed["region.provider.model-large"]["output_per_million"] == 16.5
+    assert parsed["region.provider.model-large"]["cached_read_per_million"] == 0.33
+    assert parsed["provider.model-large"]["input_per_million"] == 3.3
 
 
 def test_budget_uses_pricing_catalog_for_configured_upstream_model(isolated_env):
@@ -36,14 +36,14 @@ def test_budget_uses_pricing_catalog_for_configured_upstream_model(isolated_env)
     home = isolated_env["home"]
     env_file = paths.env_path(home)
     env_file.write_text(
-        env_file.read_text(encoding="utf-8") + "OPENAI_MODEL_STANDARD=eu.anthropic.claude-sonnet-4-6\n",
+        env_file.read_text(encoding="utf-8") + "OPENAI_MODEL_STANDARD=region.provider.model-large\n",
         encoding="utf-8",
     )
     write_yaml(
         paths.pricing_path(home),
         {
             "models": {
-                "eu.anthropic.claude-sonnet-4-6": {
+                "region.provider.model-large": {
                     "input_per_million": 3.3,
                     "output_per_million": 16.5,
                 }
@@ -76,9 +76,9 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
     captured: dict[str, object] = {}
     payload = [
         {
-            "provider": "bedrock",
-            "name": "anthropic.claude-sonnet-4-6",
-            "systemName": "eu.anthropic.claude-sonnet-4-6",
+            "provider": "provider",
+            "name": "provider.model-large",
+            "systemName": "region.provider.model-large",
             "inputPrice": 3.3,
             "outputPrice": 16.5,
         }
@@ -107,7 +107,7 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
     assert captured["timeout"] == 12
     assert paths.models_cache_path(isolated_env["home"]).exists()
     assert paths.pricing_path(isolated_env["home"]).exists()
-    assert pricing.model_pricing("eu.anthropic.claude-sonnet-4-6", isolated_env["home"])["input_per_million"] == 3.3
+    assert pricing.model_pricing("region.provider.model-large", isolated_env["home"])["input_per_million"] == 3.3
 
 
 def test_pricing_refresh_dry_run_does_not_write_cache(isolated_env, monkeypatch):

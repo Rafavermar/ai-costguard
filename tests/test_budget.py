@@ -33,13 +33,13 @@ def test_budget_status_and_mode_update(isolated_env):
 
 def test_budget_blocks_premium_when_over_limit(isolated_env):
     setup_costguard(tool="cline", daily_budget=0.001, monthly_budget=0.001, budget_mode="block-premium", non_interactive=True)
-    decision = budget.check_budget("cg-sonnet", estimated_new_cost=1.0, home=isolated_env["home"])
+    decision = budget.check_budget("cg-strong", estimated_new_cost=1.0, home=isolated_env["home"])
     assert decision.action == "block-premium"
     assert decision.blocked is True
 
 
 def test_budget_warn_allows_when_over_limit(isolated_env):
     setup_costguard(tool="cline", daily_budget=0.001, monthly_budget=0.001, budget_mode="warn", non_interactive=True)
-    decision = budget.check_budget("cg-sonnet", estimated_new_cost=1.0, home=isolated_env["home"])
+    decision = budget.check_budget("cg-strong", estimated_new_cost=1.0, home=isolated_env["home"])
     assert decision.action == "warn"
     assert decision.blocked is False

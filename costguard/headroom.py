@@ -133,7 +133,7 @@ def _call_headroom_compress(compress_fn: Callable[..., Any], payload: dict[str, 
     if not isinstance(messages, list):
         return payload
 
-    model = str(payload.get("model") or "claude-sonnet-4-5-20250929")
+    model = str(payload.get("model") or "cg-standard")
     result = compress_fn(messages, model=model)
     compressed_messages = getattr(result, "messages", None)
     if compressed_messages is None and isinstance(result, dict):

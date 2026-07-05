@@ -52,9 +52,9 @@ def setup(
     openai_model_cheap: Optional[str] = typer.Option(None, "--openai-model-cheap"),
     openai_model_standard: Optional[str] = typer.Option(None, "--openai-model-standard"),
     openai_model_strong: Optional[str] = typer.Option(None, "--openai-model-strong"),
-    openai_model_sonnet: Optional[str] = typer.Option(None, "--openai-model-sonnet"),
+    anthropic_model_cheap: Optional[str] = typer.Option(None, "--anthropic-model-cheap"),
     anthropic_model_standard: Optional[str] = typer.Option(None, "--anthropic-model-standard"),
-    anthropic_model_sonnet: Optional[str] = typer.Option(None, "--anthropic-model-sonnet"),
+    anthropic_model_strong: Optional[str] = typer.Option(None, "--anthropic-model-strong"),
     cache_mode: str = typer.Option("disabled", "--cache-mode", help="disabled, basic, or semantic."),
     headroom_enabled: bool = typer.Option(False, "--headroom/--no-headroom"),
     autostart_enabled: bool = typer.Option(False, "--autostart/--no-autostart"),
@@ -75,9 +75,9 @@ def setup(
             openai_model_cheap=openai_model_cheap,
             openai_model_standard=openai_model_standard,
             openai_model_strong=openai_model_strong,
-            openai_model_sonnet=openai_model_sonnet,
+            anthropic_model_cheap=anthropic_model_cheap,
             anthropic_model_standard=anthropic_model_standard,
-            anthropic_model_sonnet=anthropic_model_sonnet,
+            anthropic_model_strong=anthropic_model_strong,
             cache_mode=cache_mode,
             headroom_enabled=headroom_enabled,
             autostart_enabled=autostart_enabled,
@@ -149,8 +149,12 @@ def cline_config() -> None:
 
 
 @app.command("use")
-def use_model(alias: str = typer.Argument(..., help="cheap, standard, strong, sonnet, or cg-* alias.")) -> None:
-    settings = config.set_active_model(alias)
+def use_model(alias: str = typer.Argument(..., help="cheap, standard, strong, or cg-* alias.")) -> None:
+    try:
+        settings = config.set_active_model(alias)
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
     active = settings["active_model"]
     update_anthropic_model(active)
     console.print(f"Active model: {active}")

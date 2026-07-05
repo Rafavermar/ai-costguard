@@ -212,9 +212,11 @@ Variables habituales:
 ```text
 OPENAI_UPSTREAM_BASE_URL=<base URL corporativa>
 OPENAI_UPSTREAM_API_KEY=<API key corporativa>
+OPENAI_MODEL_CHEAP=<modelo barato/aprobado>
 OPENAI_MODEL_STANDARD=<nombre del modelo>
+OPENAI_MODEL_STRONG=<modelo potente/aprobado>
 COSTGUARD_PRICING_URL=<endpoint catalogo modelos/precios>
-COSTGUARD_PRICING_API_KEY=<API key catalogo si aplica>
+COSTGUARD_PRICING_API_KEY_ENV=PRICING_API_KEY
 COSTGUARD_PRICING_AUTH_HEADER=x-api-key
 COSTGUARD_PRICING_AUTH_SCHEME=
 ```

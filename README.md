@@ -82,8 +82,10 @@ These integrations are part of the base package, but they are only activated acc
 | --- | --- |
 | Cline | `costguard cline-config` prints OpenAI-compatible settings to paste into Cline. Cline is not edited automatically. |
 | Claude Code | `setup --tool claude-code` or `setup --tool both` merges Cost Guard env vars and hooks into Claude Code `settings.json` after creating a backup. |
-| Model aliases | `cg-cheap`, `cg-standard`, `cg-strong`, and `cg-sonnet` map to upstream model names configured in `.env`. |
+| Model aliases | `cg-cheap`, `cg-standard`, and `cg-strong` map to upstream model names configured locally in `.env`. |
 | Hooks | Claude Code `PreToolUse` can block or rewrite risky/noisy tool calls; `PostToolUse` records local metadata. |
+
+Model aliases are intentionally category-based, not provider-based. Each user or company can point `OPENAI_MODEL_CHEAP`, `OPENAI_MODEL_STANDARD`, `OPENAI_MODEL_STRONG`, and their Anthropic-compatible equivalents to the real model IDs approved in that environment.
 
 ## Optional Components
 
@@ -104,7 +106,7 @@ These pieces are available but disabled or opt-in by default:
 - Runs a localhost proxy on `127.0.0.1:4040`.
 - Supports Cline via OpenAI-compatible `/v1/chat/completions`.
 - Supports Claude Code via Anthropic-compatible `/v1/messages`.
-- Maps model aliases: `cg-cheap`, `cg-standard`, `cg-strong`, `cg-sonnet`.
+- Maps model aliases: `cg-cheap`, `cg-standard`, and `cg-strong`.
 - Enforces daily/monthly budgets with `warn`, `block-premium`, or `block-all`.
 - Blocks secret-like paths and commands such as `cat .env`.
 - Rewrites noisy commands such as full `git diff` and `find .`.
@@ -183,7 +185,7 @@ Model ID: cg-standard
 ```bash
 costguard status
 costguard doctor
-costguard use cheap|standard|strong|sonnet
+costguard use cheap|standard|strong
 costguard budget status
 costguard pricing status
 costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key

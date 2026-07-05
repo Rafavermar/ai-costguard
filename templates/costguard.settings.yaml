@@ -22,4 +22,3 @@ pricing:
   cg-cheap: 0.0002
   cg-standard: 0.001
   cg-strong: 0.003
-  cg-sonnet: 0.003

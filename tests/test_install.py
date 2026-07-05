@@ -66,3 +66,19 @@ def test_cli_cline_config_prints_expected_values(isolated_env):
     assert "Base URL: http://127.0.0.1:4040/v1" in result.output
     assert "API Key: sk-costguard-local" in result.output
     assert "Model ID: cg-standard" in result.output
+
+
+def test_cli_use_accepts_category_aliases_and_rejects_provider_alias(isolated_env):
+    setup_costguard(tool="cline", non_interactive=True)
+    runner = CliRunner()
+
+    for alias, expected in [("cheap", "cg-cheap"), ("standard", "cg-standard"), ("strong", "cg-strong")]:
+        result = runner.invoke(app, ["use", alias])
+        assert result.exit_code == 0
+        assert f"Active model: {expected}" in result.output
+
+    result = runner.invoke(app, ["use", "provider-specific"])
+
+    assert result.exit_code == 1
+    assert "Unknown model alias: provider-specific" in result.output
+    assert "Traceback" not in result.output

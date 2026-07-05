@@ -19,9 +19,13 @@ price_fields:
   cached_creation: cachedTokenCreationPrice
 
 aliases:
+  cg-cheap:
+    - provider.small-model
   cg-standard:
     - provider.model-name
     - provider.region.model-name
+  cg-strong:
+    - provider.large-model
 
 fallback:
   enabled: true

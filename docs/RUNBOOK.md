@@ -144,7 +144,6 @@ Changes the active model alias.
 costguard use cheap
 costguard use standard
 costguard use strong
-costguard use sonnet
 ```
 
 When Claude Code is configured, `ANTHROPIC_MODEL` is updated too.
@@ -180,7 +179,7 @@ costguard budget mode block-all
 Modes:
 
 - `warn`: warn but allow.
-- `block-premium`: block `cg-strong` and `cg-sonnet`.
+- `block-premium`: block `cg-strong`.
 - `block-all`: block new calls.
 
 ## pricing status
