@@ -65,7 +65,8 @@ def setup_costguard(
     if headroom_enabled and not headroom_mod.compatible():
         raise RuntimeError(
             "Headroom was requested but no compatible adapter was found. "
-            "Install a Python module named headroom exposing one of: "
+            'Install Headroom with: pip install "ai-costguard[headroom]". '
+            "Expected a Python module named headroom exposing one of: "
             f"{', '.join(headroom_mod.ADAPTER_FUNCTIONS)}."
         )
 

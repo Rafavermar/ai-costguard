@@ -28,6 +28,28 @@ def _install_fake_headroom(monkeypatch: pytest.MonkeyPatch, fn_name: str = "comp
     return module
 
 
+def _install_fake_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    module = types.ModuleType("headroom")
+
+    class CompressResult:
+        def __init__(self, messages: list[dict[str, Any]]) -> None:
+            self.messages = messages
+            self.tokens_before = 100
+            self.tokens_after = 20
+            self.tokens_saved = 80
+            self.compression_ratio = 0.8
+
+    def compress(messages: list[dict[str, Any]], model: str) -> CompressResult:
+        assert model == "real-model"
+        compressed = [dict(message) for message in messages]
+        compressed[0]["content"] = "short context"
+        return CompressResult(compressed)
+
+    module.compress = compress  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "headroom", module)
+    return module
+
+
 def test_headroom_enable_and_transform_payload(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
     _install_fake_headroom(monkeypatch)
@@ -45,6 +67,24 @@ def test_headroom_enable_and_transform_payload(isolated_env, monkeypatch):
     assert result.adapter == "compress_payload"
     assert result.payload["messages"][0]["content"] == "short context"
     assert result.payload["headroom_meta"]["client"] == "cline"
+
+
+def test_headroom_supports_real_compress_api(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True)
+    _install_fake_headroom_compress(monkeypatch)
+
+    status = headroom.enable(isolated_env["home"])
+    result = headroom.transform_payload(
+        {"model": "real-model", "messages": [{"role": "user", "content": "very long context"}]},
+        "cline",
+        isolated_env["home"],
+    )
+
+    assert status["active"] is True
+    assert status["adapter"] == "compress"
+    assert result.applied is True
+    assert result.adapter == "compress"
+    assert result.payload["messages"][0]["content"] == "short context"
 
 
 def test_headroom_enable_rejects_incompatible_module(isolated_env, monkeypatch):

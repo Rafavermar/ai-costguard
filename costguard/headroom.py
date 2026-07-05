@@ -11,7 +11,7 @@ from typing import Any, Callable
 from . import config, paths
 
 
-ADAPTER_FUNCTIONS = ("compress_payload", "compress_request", "transform_payload", "apply")
+ADAPTER_FUNCTIONS = ("compress", "compress_payload", "compress_request", "transform_payload", "apply")
 
 
 @dataclass(frozen=True)
@@ -57,13 +57,13 @@ def status(home: Path | None = None) -> dict[str, Any]:
         "enabled": enabled,
         "active": enabled and adapter is not None,
         "adapter": adapter_name,
-        "install_hint": "install a compatible Python module named headroom",
+        "install_hint": 'pip install "ai-costguard[headroom]" or pip install headroom-ai',
     }
 
 
 def enable(home: Path | None = None, dry_run: bool = False) -> dict[str, Any]:
     if not available():
-        raise RuntimeError("Headroom is not installed. Install a compatible Python module named headroom.")
+        raise RuntimeError('Headroom is not installed. Run: pip install "ai-costguard[headroom]"')
     if not compatible():
         functions = ", ".join(ADAPTER_FUNCTIONS)
         raise RuntimeError(f"Headroom is installed but incompatible. Expected one function: {functions}.")
@@ -95,7 +95,10 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
     adapter_name, adapter_fn = adapter
     original_payload = json.loads(json.dumps(payload))
     working_payload = json.loads(json.dumps(payload))
-    result = _call_adapter(adapter_fn, working_payload, client, home)
+    if adapter_name == "compress":
+        result = _call_headroom_compress(adapter_fn, working_payload)
+    else:
+        result = _call_adapter(adapter_fn, working_payload, client, home)
 
     if result is None:
         transformed = working_payload
@@ -123,3 +126,20 @@ def _call_adapter(adapter_fn: Callable[..., Any], payload: dict[str, Any], clien
     except TypeError:
         pass
     return adapter_fn(payload)
+
+
+def _call_headroom_compress(compress_fn: Callable[..., Any], payload: dict[str, Any]) -> dict[str, Any]:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return payload
+
+    model = str(payload.get("model") or "claude-sonnet-4-5-20250929")
+    result = compress_fn(messages, model=model)
+    compressed_messages = getattr(result, "messages", None)
+    if compressed_messages is None and isinstance(result, dict):
+        compressed_messages = result.get("messages")
+    if not isinstance(compressed_messages, list):
+        raise RuntimeError("Headroom compress() must return an object or dict with a messages list.")
+
+    payload["messages"] = compressed_messages
+    return payload
