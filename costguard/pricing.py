@@ -90,6 +90,54 @@ def save_pricing(models: dict[str, dict[str, Any]], home: Path | None = None, so
     return destination
 
 
+def configure(
+    home: Path | None = None,
+    endpoint: str | None = None,
+    api_key_env: str | None = None,
+    auth_header: str = "x-api-key",
+    auth_scheme: str | None = "",
+) -> dict[str, Any]:
+    if not endpoint:
+        raise RuntimeError("Pricing endpoint is required.")
+    home = home or paths.costguard_home()
+    values = {
+        "COSTGUARD_PRICING_URL": endpoint,
+        "COSTGUARD_PRICING_API_KEY_ENV": api_key_env or "",
+        "COSTGUARD_PRICING_API_KEY": "",
+        "COSTGUARD_PRICING_AUTH_HEADER": auth_header,
+        "COSTGUARD_PRICING_AUTH_SCHEME": auth_scheme or "",
+    }
+    env_path = paths.env_path(home)
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    updated: list[str] = []
+    seen: set[str] = set()
+    for line in existing:
+        if "=" not in line or line.strip().startswith("#"):
+            updated.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key in values:
+            updated.append(f"{key}={values[key]}")
+            seen.add(key)
+        else:
+            updated.append(line)
+    missing = [key for key in values if key not in seen]
+    if missing and updated and updated[-1].strip():
+        updated.append("")
+    for key in missing:
+        updated.append(f"{key}={values[key]}")
+    env_path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
+    return {
+        "env_file": env_path,
+        "endpoint": "configured",
+        "api_key_env": api_key_env or "",
+        "auth_header": auth_header,
+        "auth_scheme": auth_scheme or "",
+        "api_key": "not stored",
+    }
+
+
 def _auth_headers(
     env: dict[str, str],
     api_key_env: str | None = None,

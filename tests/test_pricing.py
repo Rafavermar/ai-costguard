@@ -94,7 +94,7 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
 
     result = pricing.refresh(
         isolated_env["home"],
-        endpoint="https://models.example.com/v1/models",
+        endpoint="https://models.example.test/v1/models",
         api_key_env="PRICING_API_KEY",
         auth_header="x-api-key",
         timeout=12,
@@ -102,7 +102,7 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
 
     assert result["written"] is True
     assert result["models"] == 2
-    assert captured["url"] == "https://models.example.com/v1/models"
+    assert captured["url"] == "https://models.example.test/v1/models"
     assert captured["headers"] == {"accept": "application/json", "x-api-key": "super-secret-key"}
     assert captured["timeout"] == 12
     assert paths.models_cache_path(isolated_env["home"]).exists()
@@ -139,6 +139,49 @@ def test_cli_pricing_refresh_help_lists_operational_options(isolated_env):
     assert "--auth-header" in result.output
     assert "--dry-run" in result.output
     assert "--timeout" in result.output
+
+
+def test_pricing_configure_writes_local_env_without_api_key(isolated_env):
+    setup_costguard(tool="cline", non_interactive=True)
+
+    result = pricing.configure(
+        isolated_env["home"],
+        endpoint="https://models.example.test/v1/models",
+        api_key_env="PRICING_API_KEY",
+        auth_header="x-api-key",
+    )
+    env_text = paths.env_path(isolated_env["home"]).read_text(encoding="utf-8")
+
+    assert result["endpoint"] == "configured"
+    assert result["api_key"] == "not stored"
+    assert "COSTGUARD_PRICING_URL=https://models.example.test/v1/models" in env_text
+    assert "COSTGUARD_PRICING_API_KEY_ENV=PRICING_API_KEY" in env_text
+    assert "COSTGUARD_PRICING_API_KEY=\n" in env_text
+    assert "super-secret-key" not in env_text
+
+
+def test_cli_pricing_configure_does_not_print_endpoint_or_key(isolated_env):
+    setup_costguard(tool="cline", non_interactive=True)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "pricing",
+            "configure",
+            "--endpoint",
+            "https://models.example.test/v1/models",
+            "--api-key-env",
+            "PRICING_API_KEY",
+            "--auth-header",
+            "x-api-key",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "https://models.example.test/v1/models" not in result.output
+    assert "super-secret-key" not in result.output
+    assert "configured" in result.output
 
 
 def test_cli_pricing_refresh_does_not_print_api_key(isolated_env, monkeypatch):

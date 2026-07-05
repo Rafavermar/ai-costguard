@@ -155,7 +155,8 @@ For work-PC validation, prefer `--api-key-env` so keys stay out of shell history
 
 ```powershell
 $env:PRICING_API_KEY = "<REDACTED>"
-costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key --dry-run
+costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+costguard pricing refresh --dry-run
 ```
 
 Do not print or commit real pricing API keys. The refresh command stores normalized model prices in `~/.costguard/config/pricing.yaml` and the raw model catalog in `~/.costguard/cache/models.json`.

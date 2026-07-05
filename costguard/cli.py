@@ -320,6 +320,31 @@ def pricing_status() -> None:
     _print_pricing(pricing_mod.status())
 
 
+@pricing_app.command("configure")
+def pricing_configure(
+    endpoint: str = typer.Option(..., "--endpoint", help="Model catalog endpoint to store in the local Cost Guard .env."),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help="Environment variable containing the pricing API key. The key itself is not stored.",
+    ),
+    auth_header: str = typer.Option("x-api-key", "--auth-header", help="Authentication header name."),
+    auth_scheme: Optional[str] = typer.Option(None, "--auth-scheme", help="Optional auth scheme prefix."),
+) -> None:
+    try:
+        _print_pricing(
+            pricing_mod.configure(
+                endpoint=endpoint,
+                api_key_env=api_key_env,
+                auth_header=auth_header,
+                auth_scheme=auth_scheme,
+            )
+        )
+    except Exception as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
 @pricing_app.command("refresh")
 def pricing_refresh(
     endpoint: Optional[str] = typer.Option(

@@ -200,6 +200,7 @@ Fetches model pricing from the configured endpoint and writes local pricing data
 ```bash
 costguard pricing refresh
 costguard pricing refresh --dry-run
+costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
 costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
 ```
 
@@ -219,11 +220,12 @@ Example PowerShell:
 
 ```powershell
 $env:PRICING_API_KEY = "<REDACTED>"
-costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key --dry-run
-costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+costguard pricing refresh --dry-run
+costguard pricing refresh
 ```
 
-This endpoint is a model catalog endpoint. Do not use the OpenAI-compatible inference endpoint as the pricing source.
+Use your company's model catalog endpoint. Do not use an OpenAI-compatible inference endpoint as the pricing source.
 
 The endpoint should return a JSON model catalog. Cost Guard recognizes generic fields such as `name`, `systemName`, `inputPrice`, `outputPrice`, `cachedTokenReadPrice`, and `cachedTokenCreationPrice`. Prices are treated as cost per 1,000,000 tokens and are calculated separately for input and output tokens.
 

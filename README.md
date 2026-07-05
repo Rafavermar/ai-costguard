@@ -186,6 +186,7 @@ costguard doctor
 costguard use cheap|standard|strong|sonnet
 costguard budget status
 costguard pricing status
+costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
 costguard pricing refresh
 costguard budget set --daily 5 --monthly 100
 costguard budget mode warn|block-premium|block-all

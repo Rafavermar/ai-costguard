@@ -141,6 +141,7 @@ uv run costguard rules test "git diff"
 uv run costguard rules test "find ."
 
 uv run costguard pricing --help
+uv run costguard pricing configure --help
 uv run costguard pricing refresh --help
 uv run costguard pricing status
 
@@ -161,14 +162,14 @@ Do not test Cline against the model during this phase if quota is exhausted or i
 
 CostGuard can optionally fetch and cache model prices from a provider model catalog. This does not consume LLM tokens because it calls a catalog endpoint, not chat/completions.
 
-For the company Generative Engine model catalog discovered in the POC:
+For a company model catalog, use the endpoint provided by your platform team:
 
 ```text
 GET https://models.example.com/v1/models
 Header: x-api-key: <REDACTED>
 ```
 
-Do not use the OpenAI-compatible inference endpoint as the pricing source:
+Do not use an OpenAI-compatible inference endpoint as the pricing source:
 
 ```text
 https://llm-gateway.example.com/v1
@@ -180,16 +181,22 @@ Use an environment variable for the key:
 $env:PRICING_API_KEY = "<REDACTED>"
 ```
 
+Store non-secret pricing configuration locally under `COSTGUARD_HOME`:
+
+```powershell
+uv run costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+```
+
 Validate without writing files:
 
 ```powershell
-uv run costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key --dry-run
+uv run costguard pricing refresh --dry-run
 ```
 
 Refresh and cache locally:
 
 ```powershell
-uv run costguard pricing refresh --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+uv run costguard pricing refresh
 uv run costguard pricing status
 ```
 

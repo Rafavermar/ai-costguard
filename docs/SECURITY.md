@@ -22,7 +22,7 @@ Prompts and responses are not stored by default.
 
 API keys live in `~/.costguard/.env` or in the path selected by `COSTGUARD_HOME`. `.env` is ignored by Git.
 
-Pricing catalog endpoints and API keys are also local `.env` configuration. Do not commit real `COSTGUARD_PRICING_URL` or `COSTGUARD_PRICING_API_KEY` values.
+Pricing catalog endpoints and API keys are local workstation configuration. Do not commit company-specific `COSTGUARD_PRICING_URL` values, real API keys, or screenshots/logs that reveal them. Prefer `COSTGUARD_PRICING_API_KEY_ENV` or `--api-key-env` so keys stay in environment variables.
 
 ## Localhost Proxy
 
