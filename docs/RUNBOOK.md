@@ -2,6 +2,8 @@
 
 AI Cost Guard is a local AI gateway/middleware for Cline and Claude Code. It runs on the developer machine, applies local rules and budget checks, then forwards allowed requests to the configured upstream provider.
 
+If you are not sure which procedure to run, start with `docs/START_HERE.md`.
+
 ## Golden Rules
 
 - Use `COSTGUARD_HOME` and `COSTGUARD_CLAUDE_HOME` for tests and demos; do not touch real home config unless you mean to.

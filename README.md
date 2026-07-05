@@ -217,6 +217,7 @@ costguard uninstall --yes
 
 ## Documentation
 
+- `docs/START_HERE.md`: first page for humans and agents choosing the right flow.
 - `docs/RUNBOOK.md`: command-first operating guide.
 - `docs/WORK_PC_UPDATE.md`: command-first work-PC update procedure for corporate forks using `uv`.
 - `docs/ARCHITECTURE.md`: local proxy architecture and data flow.
