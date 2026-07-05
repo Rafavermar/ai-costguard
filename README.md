@@ -4,7 +4,9 @@ AI Cost Guard is a local-first AI gateway/middleware for developers using coding
 
 Technically, it is a local wrapper around model traffic and tool usage. It sits between the local coding agent and your configured upstream model provider, then applies budget checks, rule-based command guardrails, output limits, model aliases, and SQLite usage accounting before forwarding allowed requests.
 
-It is not a full agent, model provider, cloud service, Docker stack, Postgres service, or VS Code extension. The package is intentionally small: a CLI, a localhost proxy, editable rules, optional Claude Code hooks, Cline configuration text, and local storage under `COSTGUARD_HOME`.
+In practical terms, it is a **local cost, safety, and usage-efficiency control layer for AI coding agents**. It gives teams a lightweight way to observe agent usage, estimate spend, prevent obvious secret leaks, reduce noisy tool output, and keep an easy rollback path for developer machines.
+
+It is not a full agent, model provider, cloud service, Docker stack, Postgres service, VS Code extension, or magic optimizer. The package is intentionally small: a CLI, a localhost proxy, editable rules, optional Claude Code hooks, Cline configuration text, and local storage under `COSTGUARD_HOME`.
 
 ![AI Cost Guard architecture cover](docs/assets/ai-costguard-architecture-cover.png)
 
@@ -23,6 +25,35 @@ VS Code
 - Repo-safe by default: does not modify client repositories unless `costguard attach` is explicitly run.
 - Editable rules: YAML rules can be reviewed and changed without changing Python code.
 - Metadata-only logging: prompts and responses are not stored by default.
+
+## What Problem It Solves
+
+AI coding agents are powerful, but they can be hard to operate responsibly on a work laptop:
+
+- Usage is often invisible until the provider bill or quota error appears.
+- Long context, full diffs, recursive scans, and huge logs can waste tokens.
+- Agents may accidentally request `.env`, keys, tokens, state files, or sensitive terminal output.
+- Corporate AI gateways may enforce quotas or secret filters that are hard to distinguish from local budget issues.
+- Setup and rollback should be safe for teammates who just want to try the tool.
+
+Cost Guard addresses that narrow operational gap. It does not make the model smarter, but it makes agent usage more observable, more constrained, and easier to reason about.
+
+## Monitoring And Usage Improvement
+
+Cost Guard helps monitor and improve usage efficiency through local controls. This is about reducing avoidable token waste and operational surprises; it is not a promise of lower model latency or better model reasoning.
+
+| Capability | What You Get |
+| --- | --- |
+| Usage visibility | `costguard usage today/month` shows requests, estimated tokens, estimated cost, top model, rule hits, budget blocks, and security blocks. |
+| Budget control | Daily/monthly budget modes can warn, block premium models, or block all new calls. |
+| Real pricing support | Optional `costguard pricing refresh` can cache model prices from a company/provider catalog instead of relying on fallback estimates. |
+| Output reduction | Rules rewrite noisy commands such as full `git diff` or `find .`; output limits truncate oversized responses. |
+| Secret guardrails | Default rules block `.env`, key-like files, Terraform state/vars, and secret-like payloads. |
+| Debug clarity | Docs distinguish local Cost Guard budget decisions from upstream quota errors such as HTTP 429. |
+| Local audit trail | SQLite stores metadata by default, not prompt/response content. |
+| Optional Headroom check | `costguard headroom status` shows whether a compatible Headroom package is installed and enabled. |
+
+The improvement loop is deliberately simple: inspect usage, identify noisy patterns, tune YAML rules/budgets/model aliases, refresh pricing when available, and rerun. It is an operating guardrail, not an autonomous optimization system.
 
 ## Core Components
 
@@ -61,7 +92,7 @@ These pieces are available but disabled or opt-in by default:
 | Component | Default | Purpose |
 | --- | --- | --- |
 | Cache | Disabled | Local scaffold for basic or semantic cache modes. |
-| Headroom | Disabled | Optional compression integration when the `headroom` package is installed. |
+| Headroom | Disabled | Optional compression integration if a compatible `headroom` package is installed and explicitly enabled; not required for the base product. |
 | Pricing refresh | Not run | `costguard pricing refresh` reads `COSTGUARD_PRICING_URL` and caches provider model prices locally. |
 | Project attach | Not run | `costguard attach` writes project-local Claude metadata only when explicitly requested. |
 | Purge uninstall | Not run | `costguard uninstall --purge --yes` deletes `COSTGUARD_HOME`; plain uninstall keeps it. |
@@ -79,14 +110,21 @@ These pieces are available but disabled or opt-in by default:
 - Rewrites noisy commands such as full `git diff` and `find .`.
 - Logs usage metadata to local SQLite without prompts or responses by default.
 - Installs reversible Claude Code hooks and safe commands.
+- Helps reduce avoidable token usage by rewriting noisy commands and limiting oversized outputs.
+- Provides a simple feedback loop to tune usage patterns with `usage`, `budget`, `rules`, and optional `pricing` data.
+- Separates local budget decisions from upstream provider quota/rate-limit errors.
 
 ## What It Does Not Do
 
 - It does not replace Cline, Claude Code, or your corporate GenAI backends.
+- It does not guarantee lower cost by itself; savings depend on rules, model choices, context hygiene, and team behavior.
+- It does not make the upstream model faster or more accurate.
+- It does not bypass corporate quotas, rate limits, or secret filters.
 - It does not require Docker, Kubernetes, Postgres, or a cloud dashboard.
 - It does not expose the proxy outside localhost unless you explicitly choose another host.
 - It does not modify project repos unless you run `costguard attach`.
 - It does not store real API keys in Git.
+- It does not require Headroom; Headroom is optional and only works when the dependency is installed and enabled.
 
 ## Install
 
