@@ -116,7 +116,7 @@ def configure_claude_settings(
 ) -> Path:
     settings_path = paths.claude_settings_path(claude_home)
     existing = read_json(settings_path, {})
-    if settings_path.exists():
+    if settings_path.exists() and not contains_costguard_settings(existing):
         backup_settings(claude_home, dry_run=dry_run)
     merged = merge_settings(existing, settings_fragment(costguard_home))
     write_json(settings_path, merged, dry_run=dry_run)
@@ -128,6 +128,25 @@ def _is_costguard_hook(entry: dict[str, Any]) -> bool:
         command = str(hook.get("command", ""))
         if "costguard" in command and ("pre_tool_use.py" in command or "post_tool_use.py" in command):
             return True
+    return False
+
+
+def contains_costguard_settings(settings: dict[str, Any]) -> bool:
+    env = settings.get("env", {}) or {}
+    if env.get("ANTHROPIC_BASE_URL") == "http://127.0.0.1:4040":
+        return True
+    if env.get("ANTHROPIC_AUTH_TOKEN") == "sk-costguard-local":
+        return True
+    if str(env.get("ANTHROPIC_MODEL", "")).startswith("cg-"):
+        return True
+    if "costguard" in str(env.get("PATH", "")).lower():
+        return True
+
+    hooks = settings.get("hooks", {}) or {}
+    for entries in hooks.values():
+        for entry in entries or []:
+            if isinstance(entry, dict) and _is_costguard_hook(entry):
+                return True
     return False
 
 
@@ -155,8 +174,18 @@ def remove_costguard_settings(existing: dict[str, Any]) -> dict[str, Any]:
 
 def latest_backup(claude_home: Path | None = None) -> Path | None:
     settings = paths.claude_settings_path(claude_home)
-    backups = sorted(settings.parent.glob("settings.json.bak.costguard-*"))
-    return backups[-1] if backups else None
+    backups = sorted(settings.parent.glob("settings.json.bak.costguard-*"), reverse=True)
+    for backup in backups:
+        if not contains_costguard_settings(read_json(backup, {})):
+            return backup
+    return None
+
+
+def remove_backups(claude_home: Path | None = None, dry_run: bool = False) -> None:
+    settings = paths.claude_settings_path(claude_home)
+    for backup in settings.parent.glob("settings.json.bak.costguard-*"):
+        if not dry_run:
+            backup.unlink(missing_ok=True)
 
 
 def restore_or_clean_settings(claude_home: Path | None = None, dry_run: bool = False) -> str:
@@ -166,11 +195,14 @@ def restore_or_clean_settings(claude_home: Path | None = None, dry_run: bool = F
         if not dry_run:
             settings_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(backup, settings_path)
+            remove_backups(claude_home)
         return f"restored from {backup}"
     if not settings_path.exists():
+        remove_backups(claude_home, dry_run=dry_run)
         return "no Claude Code settings found"
     existing = read_json(settings_path, {})
     write_json(settings_path, remove_costguard_settings(existing), dry_run=dry_run)
+    remove_backups(claude_home, dry_run=dry_run)
     return "removed Cost Guard fragments"
 
 

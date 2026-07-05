@@ -20,6 +20,41 @@ def test_uninstall_restores_claude_settings_from_backup(isolated_env):
     restored = json.loads((claude_home / "settings.json").read_text(encoding="utf-8"))
     assert restored == original
     assert "restored from" in result["claude"]
+    assert list(claude_home.glob("settings.json.bak.costguard-*")) == []
+
+
+def test_repeated_setup_uninstall_restores_original_claude_settings(isolated_env):
+    claude_home = isolated_env["claude_home"]
+    claude_home.mkdir(parents=True)
+    original = {"env": {"KEEP": "1"}}
+    (claude_home / "settings.json").write_text(json.dumps(original), encoding="utf-8")
+
+    setup_costguard(tool="claude-code", non_interactive=True)
+    setup_costguard(tool="claude-code", non_interactive=True)
+
+    result = uninstall_costguard()
+    restored = json.loads((claude_home / "settings.json").read_text(encoding="utf-8"))
+    assert restored == original
+    assert "restored from" in result["claude"]
+    assert list(claude_home.glob("settings.json.bak.costguard-*")) == []
+
+
+def test_uninstall_ignores_costguard_contaminated_backup(isolated_env):
+    claude_home = isolated_env["claude_home"]
+    claude_home.mkdir(parents=True)
+    original = {"env": {"KEEP": "1"}}
+    settings_path = claude_home / "settings.json"
+    settings_path.write_text(json.dumps(original), encoding="utf-8")
+
+    setup_costguard(tool="claude-code", non_interactive=True)
+    configured = json.loads(settings_path.read_text(encoding="utf-8"))
+    contaminated = claude_home / "settings.json.bak.costguard-99999999999999"
+    contaminated.write_text(json.dumps(configured), encoding="utf-8")
+
+    uninstall_costguard()
+    restored = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert restored == original
+    assert list(claude_home.glob("settings.json.bak.costguard-*")) == []
 
 
 def test_uninstall_without_backup_removes_only_costguard_fragments(isolated_env):
@@ -37,6 +72,7 @@ def test_uninstall_without_backup_removes_only_costguard_fragments(isolated_env)
     assert cleaned["env"]["USER_VALUE"] == "keep"
     assert "ANTHROPIC_AUTH_TOKEN" not in cleaned.get("env", {})
     assert "hooks" not in cleaned
+    assert list(claude_home.glob("settings.json.bak.costguard-*")) == []
 
 
 def test_uninstall_purge_deletes_costguard_home(isolated_env):
