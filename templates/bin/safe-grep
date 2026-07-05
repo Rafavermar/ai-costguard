@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "safe-grep requires rg (ripgrep)." >&2
+  exit 2
+fi
+
+rg --hidden \
+  --glob '!.git/**' \
+  --glob '!node_modules/**' \
+  --glob '!dist/**' \
+  --glob '!build/**' \
+  --glob '!target/**' \
+  --glob '!.terraform/**' \
+  --glob '!.venv/**' \
+  --glob '!__pycache__/**' \
+  --glob '!.env' \
+  --glob '!*.pem' \
+  --glob '!*.key' \
+  --max-count 50 \
+  "$@" | head -250

@@ -1,0 +1,51 @@
+blocked_paths:
+  - ".env"
+  - "*.pem"
+  - "*.key"
+  - "id_rsa"
+  - "terraform.tfstate"
+  - "*.tfvars"
+  - "*secret*"
+  - "*password*"
+  - "*credential*"
+  - "*token*"
+
+blocked_commands:
+  - pattern: "\\benv\\b"
+    reason: "Environment variables may contain secrets."
+  - pattern: "\\bprintenv\\b"
+    reason: "Environment variables may contain secrets."
+  - pattern: "cat\\s+\\.env"
+    reason: "Reading .env is blocked."
+  - pattern: "cat\\s+.*(key|secret|token|credential).*"
+    reason: "Secret-like file access is blocked."
+
+rewrite_commands:
+  - pattern: "^git diff$"
+    replacement: "git diff --stat && git diff --name-only"
+    reason: "Avoid sending a full diff before seeing the summary."
+  - pattern: "^find \\.$"
+    replacement: "find . -maxdepth 3"
+    reason: "Limit full repository scan."
+  - pattern: "\\bpytest\\b"
+    pipe: "grep -A 10 -B 4 -E 'FAIL|FAILED|ERROR|Exception|Traceback|AssertionError' | head -250"
+    reason: "Return only failing test output."
+  - pattern: "\\bnpm test\\b"
+    pipe: "grep -A 10 -B 4 -E 'FAIL|FAILED|ERROR|Exception|Traceback|AssertionError' | head -250"
+    reason: "Return only failing test output."
+  - pattern: "\\bmvn test\\b"
+    pipe: "grep -A 10 -B 4 -E 'FAIL|FAILED|ERROR|Exception|Traceback|AssertionError' | head -250"
+    reason: "Return only failing test output."
+  - pattern: "\\bgradle test\\b"
+    pipe: "grep -A 10 -B 4 -E 'FAIL|FAILED|ERROR|Exception|Traceback|AssertionError' | head -250"
+    reason: "Return only failing test output."
+
+log_rules:
+  - pattern: ".*\\.log"
+    action: "tail"
+    lines: 300
+    reason: "Avoid sending complete log files."
+
+output_limits:
+  max_chars: 20000
+  max_lines: 500

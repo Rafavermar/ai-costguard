@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pytest "$@" 2>&1 | grep -A 10 -B 4 -E 'FAIL|FAILED|ERROR|Exception|Traceback|AssertionError' | head -250
