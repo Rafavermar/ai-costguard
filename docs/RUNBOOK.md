@@ -45,7 +45,7 @@ For updating an existing corporate work-PC checkout from a company GitHub fork w
 docs/WORK_PC_UPDATE.md
 ```
 
-It covers Sync fork from GitHub web, `git pull --ff-only`, stopping CostGuard before recreating `.venv`, `uv sync --extra dev --extra headroom`, and offline validations.
+It covers Sync fork from GitHub web, `git pull --ff-only`, stopping CostGuard before recreating `.venv`, `uv sync --extra dev`, refreshing the global `costguard` command, optional Headroom validation, and offline checks.
 
 ## Install
 

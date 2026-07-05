@@ -8,7 +8,8 @@ Recommended flow:
 Personal/original repo updated
   -> Sync fork in company GitHub
   -> git pull in local company checkout
-  -> uv sync
+  -> uv sync --extra dev
+  -> refresh the global costguard command
   -> offline validations
 ```
 
@@ -16,7 +17,7 @@ Personal/original repo updated
 
 Update `ai-costguard` on a corporate PC without modifying client repositories, without touching real local configuration unnecessarily, and without consuming LLM tokens.
 
-The validations in this document are offline: they check the CLI, rules, environment, tests, and local state. They should not call Cline, Claude Code, or Generative Engine.
+The validations in this document are offline: they check the CLI, rules, environment, tests, and local state. They should not call Cline, Claude Code, or the upstream LLM provider.
 
 ## 2. Assumptions
 
@@ -90,7 +91,7 @@ From the local `ai-costguard` checkout:
 ```powershell
 Remove-Item -Recurse -Force .\.venv
 
-uv sync --extra dev --extra headroom
+uv sync --extra dev
 ```
 
 We recreate the environment cleanly because real work-PC testing showed that it avoids inconsistent environments, `missing RECORD file`, half-installed packages, and `Access denied` errors.
@@ -100,13 +101,47 @@ Expected evidence:
 - Output equivalent to `Creating virtual environment at: .venv`.
 - Packages are installed from the local project.
 - `ai-costguard` is installed from a path like `file:///.../ai-costguard`.
-- `headroom-ai` is installed when the `headroom` extra is used.
 - No `missing RECORD file` warnings appear.
 - No `Access denied` errors appear.
 
 If `Remove-Item` fails, go back to the previous section and check for live processes.
 
-## 7. Validate The Updated CLI
+Use the optional Headroom extra only when your team explicitly wants to validate request compression:
+
+```powershell
+uv sync --extra dev --extra headroom
+```
+
+Headroom is not required for the standard CostGuard CLI update.
+
+## 7. Refresh The Global costguard Command
+
+If the work PC uses `costguard` as a global command, refresh that command after pulling new code. This keeps day-to-day commands consistent with the updated repo and avoids falling back to an older installation.
+
+From the local `ai-costguard` checkout:
+
+```powershell
+uv tool install --editable "." --link-mode=copy --force
+costguard --help
+```
+
+Expected evidence:
+
+- `costguard --help` works from a fresh terminal.
+- The command exposes the same command groups as `uv run costguard --help`.
+- The global command is installed from this repo, not from an unrelated old package.
+
+If your `uv` version does not support `--force`, use the explicit reinstall path:
+
+```powershell
+uv tool uninstall costguard
+uv tool install --editable "." --link-mode=copy
+costguard --help
+```
+
+If you do not want a global command, skip this section and use `uv run costguard ...` from inside the repo.
+
+## 8. Validate The Updated CLI
 
 ```powershell
 uv run costguard --help
@@ -129,9 +164,9 @@ Expected commands:
 
 If `costguard` is not available globally, use `uv run costguard ...` from inside the repo and avoid mixing it with older global installations.
 
-## 8. Offline Validations Without Consuming Tokens
+## 9. Offline Validations Without Consuming Tokens
 
-These validations should not call LLMs or consume Generative Engine quota:
+These validations should not call LLMs or consume upstream provider quota:
 
 ```powershell
 uv run pytest
@@ -158,7 +193,7 @@ Expected evidence:
 
 Do not test Cline against the model during this phase if quota is exhausted or if you only need to validate the local update.
 
-## 9. Configure Pricing Catalog
+## 10. Configure Pricing Catalog
 
 CostGuard can optionally fetch and cache model prices from a provider model catalog. This does not consume LLM tokens because it calls a catalog endpoint, not chat/completions.
 
@@ -211,7 +246,7 @@ The API key is not written to those files. Do not paste real keys into chats, is
 
 If no pricing catalog is configured or cached, CostGuard continues to use fallback estimates from `settings.yaml`.
 
-## 10. Optional Isolated Validation
+## 11. Optional Isolated Validation
 
 To validate `setup` without touching `~/.costguard`, `~/.claude`, or real Claude Code configuration, use temporary paths inside the repo:
 
@@ -227,17 +262,17 @@ uv run costguard cline-config
 
 This isolated validation should not modify real Claude Code configuration. With `--tool cline`, CostGuard only prints Cline configuration and keeps the test inside `COSTGUARD_HOME`.
 
-## 11. What Not To Do
+## 12. What Not To Do
 
 - Do not run this procedure inside client repositories.
 - Do not use `pip install` directly unless a specific runbook says so.
 - Do not run `git reset --hard` without a backup.
 - Do not edit `~/.claude/settings.json` without explicit confirmation.
 - Do not paste secrets into terminals, issues, logs, or chats.
-- Do not test Cline against the model if Generative Engine quota is exhausted.
+- Do not test Cline against the model if upstream provider quota is exhausted.
 - Do not use `Retry` in Cline when `payload blocked by secret filter` appears; use `Start New Task`.
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### Case: `uv sync` Fails With `Access denied`
 
@@ -257,7 +292,7 @@ If there are no relevant processes, delete `.venv` and repeat `uv sync`:
 
 ```powershell
 Remove-Item -Recurse -Force .\.venv
-uv sync --extra dev --extra headroom
+uv sync --extra dev
 ```
 
 ### Case: `missing RECORD file` Warning
@@ -266,7 +301,7 @@ Recreate `.venv` with `uv`:
 
 ```powershell
 Remove-Item -Recurse -Force .\.venv
-uv sync --extra dev --extra headroom
+uv sync --extra dev
 ```
 
 ### Case: `pip` Does Not Exist In `.venv`
@@ -280,7 +315,7 @@ uv run pytest
 
 ### Case: `429 true` From Cline
 
-This is usually a Generative Engine provider limit or quota issue, not necessarily a CostGuard block.
+This is usually an upstream provider limit or quota issue, not necessarily a CostGuard block.
 
 Possible actions:
 
@@ -298,13 +333,14 @@ Recommended actions:
 - Try a minimal prompt such as `Say OK`.
 - Do not use `Retry` as the first diagnostic step because it may resend the same accumulated context.
 
-## 13. Final Checklist
+## 14. Final Checklist
 
 - [ ] Company fork synchronized from GitHub.
 - [ ] Local checkout updated with `git pull --ff-only`.
 - [ ] `costguard stop` executed.
 - [ ] No `python`, `uv`, or `costguard` processes are locking `.venv`.
-- [ ] `.venv` recreated with `uv`.
+- [ ] `.venv` recreated with `uv sync --extra dev`.
+- [ ] Global `costguard` command refreshed with `uv tool install --editable "." --link-mode=copy --force`, if used.
 - [ ] `uv run costguard --help` shows `pricing`, `headroom`, and `cache`.
 - [ ] `pytest` passes.
 - [ ] `rules test` works.
