@@ -334,7 +334,12 @@ def headroom_test(
     sample: str = typer.Option(
         "repeated",
         "--sample",
-        help="short, repeated, long-context, multi-turn, tool-output, long-code, markdown, logs, or test-failure.",
+        help="short, repeated, long-context, multi-turn, tool-output, long-code, markdown, logs, test-failure, cline-terminal-output, or cline-test-output.",
+    ),
+    from_json: Optional[Path] = typer.Option(
+        None,
+        "--from-json",
+        help="Run the proxy-route Headroom diagnostic against a local OpenAI-compatible JSON payload.",
     ),
     client: str = typer.Option("cline", "--client", help="cline or claude-code."),
     model: str = typer.Option("cg-active", "--model", help="Cost Guard model alias to resolve for the sample."),
@@ -370,20 +375,29 @@ def headroom_test(
     ),
 ) -> None:
     try:
-        _print_headroom(
-            headroom_mod.diagnostic(
-                sample=sample,
-                client=client,
-                model=model,
-                force_enabled=force,
-                input_shape=input_shape,
-                compress_user_messages=compress_user_messages,
-                protect_recent=protect_recent,
-                target_ratio=target_ratio,
-                min_tokens_to_compress=min_tokens_to_compress,
+        if from_json is not None:
+            _print_headroom(
+                headroom_mod.diagnostic_from_json(
+                    from_json,
+                    client=client,
+                    force_enabled=force,
+                )
             )
-        )
-    except ValueError as exc:
+        else:
+            _print_headroom(
+                headroom_mod.diagnostic(
+                    sample=sample,
+                    client=client,
+                    model=model,
+                    force_enabled=force,
+                    input_shape=input_shape,
+                    compress_user_messages=compress_user_messages,
+                    protect_recent=protect_recent,
+                    target_ratio=target_ratio,
+                    min_tokens_to_compress=min_tokens_to_compress,
+                )
+            )
+    except (ValueError, OSError) as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 

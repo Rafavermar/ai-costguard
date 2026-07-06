@@ -221,6 +221,12 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                 "headroom_reduction_ratio": (
                     headroom_tokens_saved / headroom_input_tokens_before if headroom_input_tokens_before else 0.0
                 ),
+                "headroom_candidate_message_count": headroom_result.candidate_message_count,
+                "headroom_compressible_message_count": headroom_result.compressible_message_count,
+                "headroom_protected_message_count": headroom_result.protected_message_count,
+                "headroom_transforms_applied": headroom_result.transforms_applied,
+                "headroom_roles_seen": headroom_result.roles_seen,
+                "headroom_roles_compressed": headroom_result.roles_compressed,
             }
         elif headroom_result.skipped_reason:
             headroom_tokens_saved = max(0, headroom_input_tokens_before - headroom_input_tokens_after)
@@ -242,6 +248,12 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                             if headroom_input_tokens_before
                             else 0.0
                         ),
+                        "headroom_candidate_message_count": headroom_result.candidate_message_count,
+                        "headroom_compressible_message_count": headroom_result.compressible_message_count,
+                        "headroom_protected_message_count": headroom_result.protected_message_count,
+                        "headroom_transforms_applied": headroom_result.transforms_applied,
+                        "headroom_roles_seen": headroom_result.roles_seen,
+                        "headroom_roles_compressed": headroom_result.roles_compressed,
                     }
                 )
 

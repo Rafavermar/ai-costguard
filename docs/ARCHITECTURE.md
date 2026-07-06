@@ -109,7 +109,7 @@ The preferred integration is the official library API:
 
 - `compress(messages, model=...)`
 
-Cost Guard passes the request `messages` list and the already-resolved upstream model name. Headroom's public contract expects OpenAI/Anthropic-style message dictionaries with `role` and `content`, and returns `CompressResult` with `messages`, `tokens_before`, `tokens_after`, `tokens_saved`, `compression_ratio`, and `transforms_applied` when available. Cost Guard reconstructs the payload from a returned messages list, text result, payload dict, or compatible wrapper. For local/custom adapters, Cost Guard also supports these payload-level functions:
+Cost Guard passes a prepared request `messages` list and the already-resolved upstream model name. Headroom's public contract expects OpenAI/Anthropic-style message dictionaries with `role` and `content`, and returns `CompressResult` with `messages`, `tokens_before`, `tokens_after`, `tokens_saved`, `compression_ratio`, and `transforms_applied` when available. For real OpenAI-compatible Cline traffic, Cost Guard classifies old assistant/tool messages that look like terminal output, logs, stack traces, test failures, diffs, long command output, code/markdown context, or SQL/Databricks validation output. Eligible assistant outputs are exposed to Headroom as tool-like messages in a temporary copy; after compression, Cost Guard reconstructs the original payload with original roles before forwarding. For local/custom adapters, Cost Guard also supports these payload-level functions:
 
 - `compress_payload(payload, ...)`
 - `compress_request(payload, ...)`
@@ -129,6 +129,8 @@ COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS=250
 ```
 
 Those defaults can produce `skipped_no_change` for a single recent user prompt. `outputs_reduced` belongs to output limits and is not Headroom evidence. `headroom status` means installed/configured; real compression is proven by positive Headroom savings, not by install status alone.
+
+Headroom metrics are stored as metadata only: candidate/compressible/protected message counts, roles seen/compressed, transforms applied, before/after sizes, estimated tokens saved, and skip reason. Prompt and response content are not stored for Headroom metrics.
 
 ## Proxy MVP
 

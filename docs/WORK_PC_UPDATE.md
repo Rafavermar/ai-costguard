@@ -222,6 +222,8 @@ costguard headroom test --sample repeated
 costguard headroom test --sample tool-output --force
 costguard headroom test --sample logs --force
 costguard headroom test --sample test-failure --force
+costguard headroom test --sample cline-terminal-output --force
+costguard headroom test --sample cline-test-output --force
 costguard usage today
 ```
 
@@ -262,6 +264,23 @@ costguard headroom test --sample repeated --force --compress-user-messages --pro
 costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
 ```
 
+To replay a real local OpenAI-compatible body without calling the upstream:
+
+```powershell
+costguard headroom test --from-json payload.json --force
+```
+
+Expected useful fields:
+
+```text
+headroom_candidate_message_count
+headroom_compressible_message_count
+headroom_protected_message_count
+headroom_last_transforms_applied
+headroom_last_roles_seen
+headroom_last_roles_compressed
+```
+
 If `headroom_applied_count` stays `0`, inspect:
 
 ```text
@@ -279,6 +298,13 @@ skipped_tools
 skipped_no_messages
 skipped_adapter_error
 skipped_no_change
+skipped_protected_recent
+skipped_protected_role
+skipped_user_message_protected
+skipped_no_compressible_messages
+skipped_below_threshold
+skipped_secret_detected
+skipped_reconstruction_error
 ```
 
 Until `headroom_applied_count > 0` appears on a real request, treat Headroom as experimental for that work-PC path.

@@ -180,6 +180,12 @@ headroom_tokens_saved        estimated input tokens saved by Headroom
 headroom_reduction_ratio     estimated saved/input ratio, for example 0.35 means 35%
 headroom_skipped_count       requests where Headroom was enabled but not applied
 headroom_last_skip_reason    latest skip reason, such as skipped_no_change
+headroom_candidate_message_count     messages that looked like compressible tool/log output
+headroom_compressible_message_count  candidate messages eligible after safety rules
+headroom_protected_message_count     candidate messages protected by role/recent/threshold rules
+headroom_last_transforms_applied     latest Headroom transform names, metadata only
+headroom_last_roles_seen             latest roles observed, metadata only
+headroom_last_roles_compressed       latest roles compressed, metadata only
 cache_hits                   requests served from local response cache
 cache_misses                 cacheable requests sent upstream and then stored
 cache_hit_ratio              hits divided by hits + misses
@@ -445,7 +451,18 @@ protect_recent=4
 min_tokens_to_compress=250
 ```
 
-That means a single recent `user` message can legitimately return `skipped_no_change`. This is expected for coding-agent safety; it avoids rewriting the latest human instruction.
+That means a single recent `user` message can legitimately return `skipped_user_message_protected` or `skipped_no_change`. This is expected for coding-agent safety; it avoids rewriting the latest human instruction.
+
+Validated compression shape:
+
+```text
+tool-output    high savings in offline diagnostics
+logs           high savings in offline diagnostics
+test-failure   high savings in offline diagnostics
+long user-only protected/no change by default
+```
+
+In real Cline traffic, Cost Guard looks for old assistant/tool messages that resemble terminal output, logs, stack traces, test failures, diffs, find output, long code/markdown, SQL/Databricks validation output, or other long command output. It exposes those messages to Headroom as tool-like messages in a temporary copy, then reconstructs the original payload with the original roles before forwarding.
 
 To validate Headroom end-to-end:
 
@@ -469,6 +486,8 @@ costguard headroom test --sample long-code
 costguard headroom test --sample markdown
 costguard headroom test --sample logs
 costguard headroom test --sample test-failure
+costguard headroom test --sample cline-terminal-output --force
+costguard headroom test --sample cline-test-output --force
 ```
 
 The command prints only metadata: adapter, requested input shape, adapter result type/keys, normalized result shape, payload reconstruction status, message count, before/after chars, estimated tokens, `changed`, and `skip_reason`. It does not print sample content or call the upstream model.
@@ -502,6 +521,14 @@ COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS=250
 
 Keep `compress_user_messages=false` unless you explicitly accept that Headroom may rewrite user-provided context. For coding agents, prefer samples or real traffic containing older tool/log outputs.
 
+To replay a real local OpenAI-compatible payload without calling the upstream model:
+
+```powershell
+costguard headroom test --from-json payload.json --force
+```
+
+This runs the same Headroom route as the proxy and prints metadata only: roles seen, candidate/protected/compressible counts, transforms, before/after sizes, estimated tokens saved, and skip reason.
+
 If Headroom is installed but disabled and you only want an offline adapter check:
 
 ```powershell
@@ -527,6 +554,13 @@ skipped_tools         tools/functions request skipped to avoid tool-call changes
 skipped_no_messages   payload has no messages list
 skipped_adapter_error adapter failed or returned an invalid shape
 skipped_no_change     adapter ran but returned the same payload
+skipped_protected_recent latest turns are protected
+skipped_protected_role role/content shape is protected
+skipped_user_message_protected user messages are protected by default
+skipped_no_compressible_messages no eligible log/tool/test output was detected
+skipped_below_threshold candidate output was below the token threshold
+skipped_secret_detected secret-like content was detected before compression
+skipped_reconstruction_error compressed messages could not be safely mapped back
 ```
 
 Until a real request shows `headroom_applied_count > 0`, treat Headroom as installed/configured but still experimental for that workstation/upstream path.

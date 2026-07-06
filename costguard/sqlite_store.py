@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS usage_events (
     headroom_reduction_ratio REAL NOT NULL DEFAULT 0.0,
     headroom_skipped INTEGER NOT NULL DEFAULT 0,
     headroom_skip_reason TEXT,
+    headroom_candidate_message_count INTEGER NOT NULL DEFAULT 0,
+    headroom_compressible_message_count INTEGER NOT NULL DEFAULT 0,
+    headroom_protected_message_count INTEGER NOT NULL DEFAULT 0,
+    headroom_transforms_applied TEXT,
+    headroom_roles_seen TEXT,
+    headroom_roles_compressed TEXT,
     cache_hit INTEGER NOT NULL DEFAULT 0,
     cache_miss INTEGER NOT NULL DEFAULT 0,
     cache_mode TEXT,
@@ -62,6 +68,12 @@ USAGE_EVENT_COLUMNS: dict[str, str] = {
     "headroom_reduction_ratio": "REAL NOT NULL DEFAULT 0.0",
     "headroom_skipped": "INTEGER NOT NULL DEFAULT 0",
     "headroom_skip_reason": "TEXT",
+    "headroom_candidate_message_count": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_compressible_message_count": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_protected_message_count": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_transforms_applied": "TEXT",
+    "headroom_roles_seen": "TEXT",
+    "headroom_roles_compressed": "TEXT",
     "cache_hit": "INTEGER NOT NULL DEFAULT 0",
     "cache_miss": "INTEGER NOT NULL DEFAULT 0",
     "cache_mode": "TEXT",
@@ -128,6 +140,12 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
         "headroom_reduction_ratio": float(event.get("headroom_reduction_ratio", 0.0)),
         "headroom_skipped": int(bool(event.get("headroom_skipped", False))),
         "headroom_skip_reason": event.get("headroom_skip_reason"),
+        "headroom_candidate_message_count": int(event.get("headroom_candidate_message_count", 0)),
+        "headroom_compressible_message_count": int(event.get("headroom_compressible_message_count", 0)),
+        "headroom_protected_message_count": int(event.get("headroom_protected_message_count", 0)),
+        "headroom_transforms_applied": event.get("headroom_transforms_applied"),
+        "headroom_roles_seen": event.get("headroom_roles_seen"),
+        "headroom_roles_compressed": event.get("headroom_roles_compressed"),
         "cache_hit": int(bool(event.get("cache_hit", False))),
         "cache_miss": int(bool(event.get("cache_miss", False))),
         "cache_mode": event.get("cache_mode"),
@@ -144,7 +162,10 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
                 headroom_adapter, headroom_input_chars_before, headroom_input_chars_after,
                 headroom_input_tokens_before, headroom_input_tokens_after,
                 headroom_tokens_saved, headroom_reduction_ratio, headroom_skipped,
-                headroom_skip_reason, cache_hit, cache_miss, cache_mode,
+                headroom_skip_reason, headroom_candidate_message_count,
+                headroom_compressible_message_count, headroom_protected_message_count,
+                headroom_transforms_applied, headroom_roles_seen, headroom_roles_compressed,
+                cache_hit, cache_miss, cache_mode,
                 cache_tokens_saved, cache_cost_saved
             )
             VALUES (
@@ -154,7 +175,10 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
                 :headroom_adapter, :headroom_input_chars_before, :headroom_input_chars_after,
                 :headroom_input_tokens_before, :headroom_input_tokens_after,
                 :headroom_tokens_saved, :headroom_reduction_ratio, :headroom_skipped,
-                :headroom_skip_reason, :cache_hit, :cache_miss, :cache_mode,
+                :headroom_skip_reason, :headroom_candidate_message_count,
+                :headroom_compressible_message_count, :headroom_protected_message_count,
+                :headroom_transforms_applied, :headroom_roles_seen, :headroom_roles_compressed,
+                :cache_hit, :cache_miss, :cache_mode,
                 :cache_tokens_saved, :cache_cost_saved
             )
             """,
@@ -200,6 +224,9 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
                    COALESCE(SUM(headroom_input_tokens_after), 0) AS headroom_input_tokens_after,
                    COALESCE(SUM(headroom_tokens_saved), 0) AS headroom_tokens_saved,
                    COALESCE(SUM(headroom_skipped), 0) AS headroom_skipped_count,
+                   COALESCE(SUM(headroom_candidate_message_count), 0) AS headroom_candidate_message_count,
+                   COALESCE(SUM(headroom_compressible_message_count), 0) AS headroom_compressible_message_count,
+                   COALESCE(SUM(headroom_protected_message_count), 0) AS headroom_protected_message_count,
                    COALESCE(SUM(cache_hit), 0) AS cache_hits,
                    COALESCE(SUM(cache_miss), 0) AS cache_misses,
                    COALESCE(SUM(cache_tokens_saved), 0) AS cache_tokens_saved,
@@ -231,6 +258,21 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
             """,
             (value,),
         ).fetchone()
+        headroom_last = connection.execute(
+            f"""
+            SELECT headroom_transforms_applied, headroom_roles_seen, headroom_roles_compressed
+            FROM usage_events
+            WHERE {clause}
+              AND (
+                headroom_transforms_applied IS NOT NULL
+                OR headroom_roles_seen IS NOT NULL
+                OR headroom_roles_compressed IS NOT NULL
+              )
+            ORDER BY timestamp DESC, id DESC
+            LIMIT 1
+            """,
+            (value,),
+        ).fetchone()
     headroom_tokens_before = int(row["headroom_input_tokens_before"])
     headroom_tokens_saved = int(row["headroom_tokens_saved"])
     headroom_reduction_ratio = (
@@ -257,6 +299,12 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
         "headroom_reduction_ratio": headroom_reduction_ratio,
         "headroom_skipped_count": int(row["headroom_skipped_count"]),
         "headroom_last_skip_reason": headroom_skip["headroom_skip_reason"] if headroom_skip else "n/a",
+        "headroom_candidate_message_count": int(row["headroom_candidate_message_count"]),
+        "headroom_compressible_message_count": int(row["headroom_compressible_message_count"]),
+        "headroom_protected_message_count": int(row["headroom_protected_message_count"]),
+        "headroom_last_transforms_applied": headroom_last["headroom_transforms_applied"] if headroom_last else "n/a",
+        "headroom_last_roles_seen": headroom_last["headroom_roles_seen"] if headroom_last else "n/a",
+        "headroom_last_roles_compressed": headroom_last["headroom_roles_compressed"] if headroom_last else "n/a",
         "cache_hits": cache_hits,
         "cache_misses": cache_misses,
         "cache_hit_ratio": cache_hits / cache_total if cache_total else 0.0,

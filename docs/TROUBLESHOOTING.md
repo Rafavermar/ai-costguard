@@ -339,6 +339,8 @@ A single recent `user` message is therefore expected to produce no reduction. Tr
 costguard headroom test --sample tool-output --force
 costguard headroom test --sample logs --force
 costguard headroom test --sample test-failure --force
+costguard headroom test --sample cline-terminal-output --force
+costguard headroom test --sample cline-test-output --force
 ```
 
 For document/RAG-style diagnostics only:
@@ -348,6 +350,25 @@ costguard headroom test --sample long-context --force --compress-user-messages -
 ```
 
 Do not enable `COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=true` for real coding traffic unless the user accepts that Headroom may rewrite user-provided context.
+
+If offline samples compress but real Cline traffic still does not, replay a saved local request body:
+
+```powershell
+costguard headroom test --from-json payload.json --force
+```
+
+Look at:
+
+```text
+headroom_candidate_message_count
+headroom_compressible_message_count
+headroom_protected_message_count
+headroom_roles_seen
+headroom_roles_compressed
+headroom_transforms_applied
+```
+
+If `candidate=0`, the real payload does not look like log/tool/test output. If `candidate>0` and `compressible=0`, check whether recent-turn or user-message protection is expected.
 
 Raw local logs are under:
 

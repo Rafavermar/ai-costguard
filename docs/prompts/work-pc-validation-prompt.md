@@ -308,6 +308,8 @@ costguard headroom test --sample long-context
 costguard headroom test --sample tool-output --force
 costguard headroom test --sample logs --force
 costguard headroom test --sample test-failure --force
+costguard headroom test --sample cline-terminal-output --force
+costguard headroom test --sample cline-test-output --force
 ```
 
 `headroom test` is offline and does not call the upstream model. It prints metadata only and does not print sample content.
@@ -338,6 +340,14 @@ If you explicitly need a document/RAG-style diagnostic, run this offline only:
 costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
 ```
 
+If real Cline traffic does not compress, save a local OpenAI-compatible payload body to a file and replay it offline:
+
+```powershell
+costguard headroom test --from-json payload.json --force
+```
+
+Check candidate/compressible/protected counts, roles seen/compressed, transforms applied, tokens saved, and skip reason. Do not print the payload content.
+
 End-to-end Headroom evidence requires real Cline/CostGuard traffic and consumes quota:
 
 ```powershell
@@ -348,6 +358,7 @@ Evidence:
 - `headroom_applied_count > 0`
 - `headroom_tokens_saved > 0` when the prompt/context is long enough
 - `headroom_reduction_ratio > 0` when compression is effective
+- `headroom_last_transforms_applied` is not empty when the adapter reports transforms
 
 If `headroom_applied_count` stays `0`, inspect:
 

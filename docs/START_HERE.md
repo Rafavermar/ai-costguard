@@ -159,7 +159,7 @@ Cline may resend task history, system prompt, tool metadata, selected files, and
 costguard usage today
 ```
 
-For Headroom validation, first run `costguard headroom test --sample tool-output --force` offline. If simple `repeated` returns `skipped_no_change`, remember Headroom protects user messages and recent turns by default; compare `--input-shape messages-list`, `raw-text`, `openai-payload`, and `concatenated-messages-text` only to diagnose adapter format. For real traffic, look for `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`. `outputs_reduced` means output truncation, not Headroom compression.
+For Headroom validation, first run `costguard headroom test --sample tool-output --force`, `--sample logs`, or `--sample test-failure` offline. If simple `repeated` returns no change, remember Headroom protects user messages and recent turns by default. Use `costguard headroom test --from-json payload.json --force` to replay a real local request without calling the model. For real traffic, look for `headroom_applied_count`, `headroom_tokens_saved`, `headroom_reduction_ratio`, candidate/compressible/protected counts, roles compressed, and transforms applied. `outputs_reduced` means output truncation, not Headroom compression.
 
 For basic cache validation, do not start with Cline. Enable `basic`, set `COSTGUARD_CACHE_STORE_CONTENT=true` only for safe test prompts, send two identical direct proxy requests, and expect `cache_misses=1`, `cache_hits=1`. Return to the safe default with `costguard cache disable` and `COSTGUARD_CACHE_STORE_CONTENT=false`.
 

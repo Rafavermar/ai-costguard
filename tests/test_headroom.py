@@ -45,7 +45,10 @@ def _install_fake_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.Mo
         assert model == "real-model"
         module.calls.append({"messages": messages, "model": model})  # type: ignore[attr-defined]
         compressed = [dict(message) for message in messages]
-        compressed[0]["content"] = "short context"
+        for message in compressed:
+            if message.get("role") != "system":
+                message["content"] = "short context"
+                break
         return CompressResult(compressed)
 
     module.calls = []  # type: ignore[attr-defined]
@@ -158,11 +161,12 @@ def test_headroom_enable_and_transform_payload(isolated_env, monkeypatch):
 
 def test_headroom_supports_real_compress_api(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
+    monkeypatch.setenv("COSTGUARD_HEADROOM_PROTECT_RECENT", "0")
     _install_fake_headroom_compress(monkeypatch)
 
     status = headroom.enable(isolated_env["home"])
     result = headroom.transform_payload(
-        {"model": "real-model", "messages": [{"role": "user", "content": "very long context"}]},
+        {"model": "real-model", "messages": [{"role": "tool", "content": "very long context " * 200}]},
         "cline",
         isolated_env["home"],
     )
@@ -269,8 +273,16 @@ def test_proxy_invokes_compress_adapter_for_openai_chat_request(isolated_env, mo
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        long_text = "repeatable context " * 400
-        body = json.dumps({"model": "cg-cheap", "messages": [{"role": "user", "content": long_text}]})
+        long_text = "\n".join(f"2026-01-01T10:00:{index:02d}Z ERROR terminal output line {index}" for index in range(400))
+        messages = [
+            {"role": "system", "content": "Be concise."},
+            {"role": "assistant", "content": "Terminal output:\n" + long_text},
+            {"role": "assistant", "content": "I can summarize this output."},
+            {"role": "user", "content": "Keep it short."},
+            {"role": "assistant", "content": "Understood."},
+            {"role": "user", "content": "What failed?"},
+        ]
+        body = json.dumps({"model": "cg-cheap", "messages": messages})
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
         connection.request(
             "POST",
@@ -287,14 +299,21 @@ def test_proxy_invokes_compress_adapter_for_openai_chat_request(isolated_env, mo
         thread.join(timeout=5)
 
     assert response.status == 200
-    assert fake_headroom.calls == [{"messages": [{"role": "user", "content": long_text}], "model": "real-model"}]
-    assert captured["json"]["messages"][0]["content"] == "short context"
+    assert len(fake_headroom.calls) == 1
+    assert fake_headroom.calls[0]["model"] == "real-model"
+    assert fake_headroom.calls[0]["messages"][1]["role"] == "tool"
+    assert captured["json"]["messages"][1]["role"] == "assistant"
+    assert captured["json"]["messages"][1]["content"] == "short context"
     summary = usage_mod.summary("today", isolated_env["home"])
     assert summary["headroom_applied_count"] == 1
     assert summary["headroom_skipped_count"] == 0
     assert summary["headroom_input_chars_before"] > summary["headroom_input_chars_after"]
     assert summary["headroom_tokens_saved"] > 0
     assert summary["headroom_last_skip_reason"] == "n/a"
+    assert summary["headroom_candidate_message_count"] == 1
+    assert summary["headroom_compressible_message_count"] == 1
+    assert summary["headroom_last_roles_seen"] == "system,assistant,user"
+    assert summary["headroom_last_roles_compressed"] == "assistant"
 
 
 def test_proxy_records_headroom_skip_reason_for_tools_request(isolated_env, monkeypatch):
@@ -348,6 +367,50 @@ def test_proxy_records_headroom_skip_reason_for_tools_request(isolated_env, monk
     assert summary["headroom_input_chars_before"] > 0
 
 
+def test_headroom_protects_user_only_long_context(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    fake_headroom = _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.transform_payload(
+        {"model": "real-model", "messages": [{"role": "user", "content": "long user context " * 1200}]},
+        "cline",
+        isolated_env["home"],
+    )
+
+    assert result.applied is False
+    assert result.skipped_reason == "skipped_user_message_protected"
+    assert result.candidate_message_count == 1
+    assert result.compressible_message_count == 0
+    assert result.protected_message_count == 1
+    assert result.roles_seen == "user"
+    assert fake_headroom.calls == []
+
+
+def test_headroom_skips_secret_like_payload_before_adapter(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    fake_headroom = _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.transform_payload(
+        {
+            "model": "real-model",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "2026-01-01T10:00:00Z ERROR api_key=ABCDEFGHIJKLMNO should not be processed",
+                }
+            ],
+        },
+        "cline",
+        isolated_env["home"],
+    )
+
+    assert result.applied is False
+    assert result.skipped_reason == "skipped_secret_detected"
+    assert fake_headroom.calls == []
+
+
 def test_headroom_diagnostic_reports_metrics_without_content(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
     _install_fake_headroom_compress(monkeypatch)
@@ -375,6 +438,42 @@ def test_headroom_diagnostic_reports_metrics_without_content(isolated_env, monke
     assert result["skip_reason"] == "n/a"
     assert result["content_printed"] is False
     assert "Cost Guard validates" not in json.dumps(result)
+
+
+def test_headroom_diagnostic_from_json_uses_proxy_route_without_content(isolated_env, monkeypatch, tmp_path):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_fake_headroom_compress(monkeypatch)
+    payload_path = tmp_path / "payload.json"
+    terminal_output = "\n".join(f"2026-01-01T10:00:{index:02d}Z ERROR terminal output line {index}" for index in range(300))
+    payload_path.write_text(
+        json.dumps(
+            {
+                "model": "real-model",
+                "messages": [
+                    {"role": "system", "content": "Be concise."},
+                    {"role": "assistant", "content": "Terminal output:\n" + terminal_output},
+                    {"role": "assistant", "content": "I can summarize this output."},
+                    {"role": "user", "content": "Keep it short."},
+                    {"role": "assistant", "content": "Understood."},
+                    {"role": "user", "content": "What failed?"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = headroom.diagnostic_from_json(payload_path, client="cline", home=isolated_env["home"], force_enabled=True)
+
+    assert result["changed"] is True
+    assert result["requested_input_shape"] == "proxy-route"
+    assert result["headroom_candidate_message_count"] == 1
+    assert result["headroom_compressible_message_count"] == 1
+    assert result["headroom_protected_message_count"] == 0
+    assert result["headroom_roles_seen"] == "system,assistant,user"
+    assert result["headroom_roles_compressed"] == "assistant"
+    assert result["tokens_saved"] > 0
+    assert result["content_printed"] is False
+    assert "terminal output line" not in json.dumps(result)
 
 
 def test_headroom_diagnostic_passes_compress_options(isolated_env, monkeypatch):

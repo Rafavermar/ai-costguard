@@ -3,12 +3,13 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config, paths
+from . import config, paths, rules
 from .utils import parse_bool
 
 
@@ -26,6 +27,8 @@ SAMPLE_NAMES = {
     "markdown",
     "logs",
     "test-failure",
+    "cline-terminal-output",
+    "cline-test-output",
 }
 INPUT_SHAPE_ALIASES = {
     "openai_chat_payload": "openai-payload",
@@ -43,6 +46,27 @@ SKIPPED_TOOLS = "skipped_tools"
 SKIPPED_NO_MESSAGES = "skipped_no_messages"
 SKIPPED_ADAPTER_ERROR = "skipped_adapter_error"
 SKIPPED_NO_CHANGE = "skipped_no_change"
+SKIPPED_PROTECTED_RECENT = "skipped_protected_recent"
+SKIPPED_PROTECTED_ROLE = "skipped_protected_role"
+SKIPPED_USER_MESSAGE_PROTECTED = "skipped_user_message_protected"
+SKIPPED_NO_COMPRESSIBLE_MESSAGES = "skipped_no_compressible_messages"
+SKIPPED_BELOW_THRESHOLD = "skipped_below_threshold"
+SKIPPED_SECRET_DETECTED = "skipped_secret_detected"
+SKIPPED_RECONSTRUCTION_ERROR = "skipped_reconstruction_error"
+
+COMPRESSIBLE_ROLE_NAMES = {"tool", "function"}
+TOOL_OUTPUT_PATTERNS = (
+    r"(?im)^\s*(ERROR|WARN|INFO|DEBUG)\b",
+    r"(?im)^\d{4}-\d{2}-\d{2}T\d{2}:",
+    r"(?im)^FAILED\s+.+::",
+    r"(?im)\b(AssertionError|Traceback|Exception|RuntimeError)\b",
+    r"(?im)\b(pytest|npm|mvn|gradle)\b.*\b(FAIL|FAILED|ERROR)\b",
+    r"(?im)^diff --git\b",
+    r"(?im)^@@\s+-\d+,\d+\s+\+\d+,\d+\s+@@",
+    r"(?im)^\s*(\./|[A-Za-z]:\\).+",
+    r"(?im)\b(databricks|spark|sql|validation)\b.*\b(ERROR|FAILED|WARN)\b",
+    r"(?im)^```",
+)
 
 
 @dataclass(frozen=True)
@@ -57,6 +81,12 @@ class TransformResult:
     normalized_result_shape: str | None = None
     payload_reconstruction_status: str | None = None
     adapter_result_details: dict[str, Any] | None = None
+    candidate_message_count: int = 0
+    compressible_message_count: int = 0
+    protected_message_count: int = 0
+    roles_seen: str = "n/a"
+    roles_compressed: str = "n/a"
+    transforms_applied: str = "n/a"
     error_type: str | None = None
 
 
@@ -65,6 +95,24 @@ class NormalizedResult:
     payload: dict[str, Any]
     shape: str
     status: str
+
+
+@dataclass(frozen=True)
+class PreparedMessages:
+    messages: list[dict[str, Any]]
+    original_messages: list[dict[str, Any]]
+    original_roles: list[str]
+    compressible_indexes: set[int]
+    candidate_message_count: int
+    compressible_message_count: int
+    protected_message_count: int
+    below_threshold_count: int
+    user_protected_count: int
+    recent_protected_count: int
+    role_protected_count: int
+    roles_seen: str
+    roles_compressed: str
+    skip_reason: str | None = None
 
 
 def available() -> bool:
@@ -139,6 +187,9 @@ def transform_payload(
     if not config.headroom_enabled(home) and not force_enabled:
         return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_DISABLED)
 
+    if rules.has_secret_like_content(json.dumps(payload)):
+        return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_SECRET_DETECTED)
+
     skip_reason = _skip_reason(payload, client)
     if skip_reason is not None:
         return TransformResult(payload=payload, applied=False, skipped_reason=skip_reason)
@@ -151,6 +202,7 @@ def transform_payload(
     adapter_input_shape = _adapter_input_shape(adapter_name)
     original_payload = json.loads(json.dumps(payload))
     working_payload = json.loads(json.dumps(payload))
+    prepared: PreparedMessages | None = None
     result: Any = None
     try:
         if adapter_name == "compress":
@@ -158,7 +210,26 @@ def transform_payload(
             if not isinstance(messages, list):
                 return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_NO_MESSAGES)
             model = str(working_payload.get("model") or "cg-standard")
-            result = _call_compress(adapter_fn, messages, model, _headroom_options(home))
+            prepared = _prepare_messages_for_headroom(working_payload, home)
+            if prepared.skip_reason is not None:
+                return TransformResult(
+                    payload=payload,
+                    applied=False,
+                    adapter=adapter_name,
+                    skipped_reason=prepared.skip_reason,
+                    adapter_input_shape=adapter_input_shape,
+                    adapter_result_type="n/a",
+                    adapter_result_keys="n/a",
+                    normalized_result_shape="n/a",
+                    payload_reconstruction_status="n/a",
+                    adapter_result_details=_empty_result_details(),
+                    candidate_message_count=prepared.candidate_message_count,
+                    compressible_message_count=prepared.compressible_message_count,
+                    protected_message_count=prepared.protected_message_count,
+                    roles_seen=prepared.roles_seen,
+                    roles_compressed=prepared.roles_compressed,
+                )
+            result = _call_compress(adapter_fn, prepared.messages, model, _headroom_options(home))
         else:
             result = _call_adapter(adapter_fn, working_payload, client, home)
         adapter_result_type = type(result).__name__
@@ -191,9 +262,38 @@ def transform_payload(
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
             adapter_result_details=result_details,
+            candidate_message_count=prepared.candidate_message_count if prepared else 0,
+            compressible_message_count=prepared.compressible_message_count if prepared else 0,
+            protected_message_count=prepared.protected_message_count if prepared else 0,
+            roles_seen=prepared.roles_seen if prepared else "n/a",
+            roles_compressed=prepared.roles_compressed if prepared else "n/a",
+            transforms_applied=str(result_details["transforms_applied"]),
             error_type="invalid_result",
         )
     transformed = normalized.payload
+    if prepared is not None:
+        try:
+            transformed = _restore_original_message_shapes(transformed, original_payload, prepared)
+        except ValueError as exc:
+            return TransformResult(
+                payload=payload,
+                applied=False,
+                adapter=adapter_name,
+                skipped_reason=SKIPPED_RECONSTRUCTION_ERROR,
+                adapter_input_shape=adapter_input_shape,
+                adapter_result_type=adapter_result_type,
+                adapter_result_keys=_result_keys(result),
+                normalized_result_shape=normalized.shape,
+                payload_reconstruction_status="reconstruction_error",
+                adapter_result_details=result_details,
+                candidate_message_count=prepared.candidate_message_count,
+                compressible_message_count=prepared.compressible_message_count,
+                protected_message_count=prepared.protected_message_count,
+                roles_seen=prepared.roles_seen,
+                roles_compressed=prepared.roles_compressed,
+                transforms_applied=str(result_details["transforms_applied"]),
+                error_type=type(exc).__name__,
+            )
 
     if transformed == original_payload:
         return TransformResult(
@@ -207,6 +307,12 @@ def transform_payload(
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
             adapter_result_details=result_details,
+            candidate_message_count=prepared.candidate_message_count if prepared else 0,
+            compressible_message_count=prepared.compressible_message_count if prepared else 0,
+            protected_message_count=prepared.protected_message_count if prepared else 0,
+            roles_seen=prepared.roles_seen if prepared else "n/a",
+            roles_compressed=prepared.roles_compressed if prepared else "n/a",
+            transforms_applied=str(result_details["transforms_applied"]),
         )
     return TransformResult(
         payload=transformed,
@@ -218,6 +324,12 @@ def transform_payload(
         normalized_result_shape=normalized.shape,
         payload_reconstruction_status=normalized.status,
         adapter_result_details=result_details,
+        candidate_message_count=prepared.candidate_message_count if prepared else 0,
+        compressible_message_count=prepared.compressible_message_count if prepared else 0,
+        protected_message_count=prepared.protected_message_count if prepared else 0,
+        roles_seen=prepared.roles_seen if prepared else "n/a",
+        roles_compressed=prepared.roles_compressed if prepared else "n/a",
+        transforms_applied=str(result_details["transforms_applied"]),
     )
 
 
@@ -433,8 +545,12 @@ def sample_payload(
         messages = _conversation_with_tool_output(_sample_markdown(), final_request="Summarize decisions and open questions.")
     elif sample == "logs":
         messages = _conversation_with_tool_output(_sample_logs(360), final_request="Find repeated errors and warnings.")
-    else:
+    elif sample == "test-failure":
         messages = _conversation_with_tool_output(_sample_test_failure(), final_request="Explain the failing test briefly.")
+    elif sample == "cline-terminal-output":
+        messages = _cline_embedded_output(_sample_tool_output(), final_request="Summarize the terminal output.")
+    else:
+        messages = _cline_embedded_output(_sample_test_failure(), final_request="Summarize the failing tests.")
 
     env = config.load_env(home)
     alias = config.resolve_model_alias(model, home)
@@ -447,6 +563,90 @@ def sample_payload(
     }
 
 
+def diagnostic_from_json(
+    payload_path: Path,
+    client: str = "cline",
+    home: Path | None = None,
+    force_enabled: bool = False,
+) -> dict[str, Any]:
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("--from-json must point to a JSON object.")
+    return diagnostic_payload(
+        payload,
+        sample=f"from-json:{payload_path.name}",
+        client=client,
+        home=home,
+        force_enabled=force_enabled,
+    )
+
+
+def diagnostic_payload(
+    payload: dict[str, Any],
+    sample: str = "payload",
+    client: str = "cline",
+    home: Path | None = None,
+    force_enabled: bool = False,
+) -> dict[str, Any]:
+    home = home or paths.costguard_home()
+    before_text = json.dumps(payload)
+    before_chars = len(before_text)
+    before_tokens = _estimate_tokens(before_chars)
+    result = transform_payload(payload, client, home, force_enabled=force_enabled)
+    after_text = json.dumps(result.payload)
+    after_chars = len(after_text)
+    after_tokens = _estimate_tokens(after_chars)
+    tokens_saved = max(0, before_tokens - after_tokens)
+    adapter = _adapter_callable()
+    status_data = status(home)
+    result_details = result.adapter_result_details or _empty_result_details()
+    return {
+        "sample": sample,
+        "client": client,
+        "model_alias": str(payload.get("model", "")),
+        "upstream_model": str(payload.get("model", "")),
+        "available": status_data["available"],
+        "compatible": status_data["compatible"],
+        "enabled": status_data["enabled"],
+        "force_enabled": force_enabled,
+        "adapter": result.adapter or (adapter[0] if adapter else ""),
+        "input_type": "openai_chat_payload",
+        "requested_input_shape": "proxy-route",
+        "adapter_input_shape": result.adapter_input_shape or (_adapter_input_shape(adapter[0]) if adapter else "n/a"),
+        "adapter_result_type": result.adapter_result_type or "n/a",
+        "adapter_result_keys": result.adapter_result_keys or "n/a",
+        "adapter_result_attributes": result_details["attributes"],
+        "adapter_result_message_count": result_details["message_count"],
+        "adapter_result_tokens_before": result_details["tokens_before"],
+        "adapter_result_tokens_after": result_details["tokens_after"],
+        "adapter_result_tokens_saved": result_details["tokens_saved"],
+        "adapter_result_compression_ratio": result_details["compression_ratio"],
+        "adapter_result_transforms_applied": result_details["transforms_applied"],
+        "adapter_result_changed_flag": result_details["changed"],
+        "adapter_result_reason": result_details["reason"],
+        "adapter_result_metadata_keys": result_details["metadata_keys"],
+        "normalized_result_shape": result.normalized_result_shape or "n/a",
+        "payload_reconstruction_status": result.payload_reconstruction_status or "n/a",
+        "input_message_count": _message_count(payload),
+        "headroom_candidate_message_count": result.candidate_message_count,
+        "headroom_compressible_message_count": result.compressible_message_count,
+        "headroom_protected_message_count": result.protected_message_count,
+        "headroom_roles_seen": result.roles_seen,
+        "headroom_roles_compressed": result.roles_compressed,
+        "headroom_transforms_applied": result.transforms_applied,
+        "input_chars_before": before_chars,
+        "input_chars_after": after_chars,
+        "input_tokens_before": before_tokens,
+        "input_tokens_after": after_tokens,
+        "tokens_saved": tokens_saved,
+        "reduction_ratio": tokens_saved / before_tokens if before_tokens else 0.0,
+        "changed": result.applied,
+        "skip_reason": result.skipped_reason or "n/a",
+        "error_type": result.error_type or "n/a",
+        "content_printed": False,
+    }
+
+
 def _conversation_with_tool_output(content: str, final_request: str) -> list[dict[str, Any]]:
     return [
         {"role": "system", "content": "You are a concise engineering assistant. Prefer short, actionable answers."},
@@ -456,6 +656,19 @@ def _conversation_with_tool_output(content: str, final_request: str) -> list[dic
         {"role": "assistant", "content": "I found repeated patterns and a small number of likely root causes."},
         {"role": "user", "content": "Keep the answer short and avoid restating all raw output."},
         {"role": "assistant", "content": "Understood. I will provide the minimal diagnosis."},
+        {"role": "user", "content": final_request},
+    ]
+
+
+def _cline_embedded_output(content: str, final_request: str) -> list[dict[str, Any]]:
+    return [
+        {"role": "system", "content": "You are a concise engineering assistant. Prefer short answers."},
+        {"role": "user", "content": "Review the previous terminal output and explain what matters."},
+        {
+            "role": "assistant",
+            "content": "Terminal output:\n\n" + content,
+        },
+        {"role": "assistant", "content": "I can summarize the repeated output without restating it."},
         {"role": "user", "content": final_request},
     ]
 
@@ -540,6 +753,180 @@ def _sample_test_failure() -> str:
             )
         )
     return "\n\n".join(blocks)
+
+
+def _prepare_messages_for_headroom(payload: dict[str, Any], home: Path) -> PreparedMessages:
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return PreparedMessages(
+            messages=[],
+            original_messages=[],
+            original_roles=[],
+            compressible_indexes=set(),
+            candidate_message_count=0,
+            compressible_message_count=0,
+            protected_message_count=0,
+            below_threshold_count=0,
+            user_protected_count=0,
+            recent_protected_count=0,
+            role_protected_count=0,
+            roles_seen="n/a",
+            roles_compressed="n/a",
+            skip_reason=SKIPPED_NO_MESSAGES,
+        )
+
+    options = _headroom_options(home)
+    protect_recent = max(0, int(options["protect_recent"]))
+    min_tokens = max(1, int(options["min_tokens_to_compress"]))
+    compress_user_messages = bool(options["compress_user_messages"])
+    protected_start = max(0, len(messages) - protect_recent) if protect_recent else len(messages)
+
+    prepared: list[dict[str, Any]] = []
+    original_messages: list[dict[str, Any]] = []
+    original_roles: list[str] = []
+    compressible_indexes: set[int] = set()
+    candidate_count = 0
+    protected_count = 0
+    below_threshold_count = 0
+    user_protected_count = 0
+    recent_protected_count = 0
+    role_protected_count = 0
+
+    for index, raw_message in enumerate(messages):
+        if not isinstance(raw_message, dict):
+            raw_message = {"role": "unknown", "content": str(raw_message)}
+        original = json.loads(json.dumps(raw_message))
+        message = json.loads(json.dumps(raw_message))
+        role = str(message.get("role", "unknown"))
+        original_roles.append(role)
+        original_messages.append(original)
+        content = message.get("content")
+        text = content if isinstance(content, str) else ""
+        content_tokens = _estimate_tokens(len(text)) if text else 0
+        looks_compressible = _looks_like_compressible_output(role, text)
+        is_candidate = bool(text) and looks_compressible
+        if is_candidate:
+            candidate_count += 1
+
+        protected_recent = index >= protected_start
+        protected_user = role == "user" and not compress_user_messages
+        protected_shape = not isinstance(content, str)
+        below_threshold = bool(text) and content_tokens < min_tokens
+
+        if is_candidate and protected_recent:
+            recent_protected_count += 1
+        if is_candidate and protected_user:
+            user_protected_count += 1
+        if is_candidate and protected_shape:
+            role_protected_count += 1
+        if is_candidate and below_threshold:
+            below_threshold_count += 1
+
+        protected = protected_recent or protected_user or protected_shape or below_threshold
+        if protected and is_candidate:
+            protected_count += 1
+
+        if is_candidate and not protected:
+            compressible_indexes.add(index)
+            if role not in COMPRESSIBLE_ROLE_NAMES:
+                message["role"] = "tool"
+                message.setdefault("tool_call_id", f"costguard_headroom_{index}")
+        prepared.append(message)
+
+    roles_seen = _join_unique(original_roles)
+    roles_compressed = _join_unique(original_roles[index] for index in sorted(compressible_indexes))
+    skip_reason = _prepared_skip_reason(
+        candidate_count=candidate_count,
+        compressible_count=len(compressible_indexes),
+        below_threshold_count=below_threshold_count,
+        user_protected_count=user_protected_count,
+        recent_protected_count=recent_protected_count,
+        role_protected_count=role_protected_count,
+    )
+    return PreparedMessages(
+        messages=prepared,
+        original_messages=original_messages,
+        original_roles=original_roles,
+        compressible_indexes=compressible_indexes,
+        candidate_message_count=candidate_count,
+        compressible_message_count=len(compressible_indexes),
+        protected_message_count=protected_count,
+        below_threshold_count=below_threshold_count,
+        user_protected_count=user_protected_count,
+        recent_protected_count=recent_protected_count,
+        role_protected_count=role_protected_count,
+        roles_seen=roles_seen,
+        roles_compressed=roles_compressed,
+        skip_reason=skip_reason,
+    )
+
+
+def _prepared_skip_reason(
+    candidate_count: int,
+    compressible_count: int,
+    below_threshold_count: int,
+    user_protected_count: int,
+    recent_protected_count: int,
+    role_protected_count: int,
+) -> str | None:
+    if compressible_count > 0:
+        return None
+    if candidate_count == 0:
+        return SKIPPED_NO_COMPRESSIBLE_MESSAGES
+    if user_protected_count >= candidate_count:
+        return SKIPPED_USER_MESSAGE_PROTECTED
+    if recent_protected_count >= candidate_count:
+        return SKIPPED_PROTECTED_RECENT
+    if below_threshold_count >= candidate_count:
+        return SKIPPED_BELOW_THRESHOLD
+    if role_protected_count >= candidate_count:
+        return SKIPPED_PROTECTED_ROLE
+    return SKIPPED_NO_COMPRESSIBLE_MESSAGES
+
+
+def _looks_like_compressible_output(role: str, text: str) -> bool:
+    if not text:
+        return False
+    if role in COMPRESSIBLE_ROLE_NAMES:
+        return True
+    if role == "user":
+        return len(text) > 12000
+    if len(text) > 12000 and role in {"assistant", "system"}:
+        return True
+    return any(re.search(pattern, text) for pattern in TOOL_OUTPUT_PATTERNS)
+
+
+def _restore_original_message_shapes(
+    compressed_payload: dict[str, Any],
+    original_payload: dict[str, Any],
+    prepared: PreparedMessages,
+) -> dict[str, Any]:
+    compressed_messages = compressed_payload.get("messages")
+    if not isinstance(compressed_messages, list):
+        raise ValueError("compressed payload has no messages list")
+    if len(compressed_messages) != len(prepared.original_messages):
+        raise ValueError("compressed message count changed")
+
+    restored_messages: list[dict[str, Any]] = []
+    for index, original in enumerate(prepared.original_messages):
+        restored = json.loads(json.dumps(original))
+        compressed = compressed_messages[index]
+        if index in prepared.compressible_indexes and isinstance(compressed, dict) and isinstance(compressed.get("content"), str):
+            restored["content"] = compressed["content"]
+        restored_messages.append(restored)
+
+    restored_payload = json.loads(json.dumps(original_payload))
+    restored_payload["messages"] = restored_messages
+    return restored_payload
+
+
+def _join_unique(values: Any) -> str:
+    seen = []
+    for value in values:
+        label = str(value)
+        if label and label not in seen:
+            seen.append(label)
+    return ",".join(seen) if seen else "n/a"
 
 
 def _adapter_input_shape(adapter_name: str) -> str:
