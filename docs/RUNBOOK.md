@@ -125,7 +125,7 @@ cache_tokens_saved           estimated tokens not sent upstream because of cache
 cache_cost_saved             estimated local cost avoided because of cache hits
 ```
 
-Do not use `outputs_reduced` as Headroom evidence. It belongs to output limits, not request compression.
+Do not use `outputs_reduced` as cache or Headroom evidence. It belongs to output limits, not request compression or cache hits.
 
 ## Model Routing With Cline
 
@@ -246,8 +246,13 @@ costguard cache enable --mode basic
 costguard cache disable
 costguard cache clear
 costguard cache clear --responses
+costguard cache clear --responses-only
 costguard cache clear --pricing
+costguard cache clear --pricing-only
 costguard cache clear --vectors
+costguard cache clear --vectors-only
+costguard cache clear --expired
+costguard cache inspect
 ```
 
 Cache modes:
@@ -258,22 +263,65 @@ basic     exact-match response cache; requires COSTGUARD_CACHE_STORE_CONTENT=tru
 semantic  scaffolded/experimental; embeddings are not active yet
 ```
 
-Basic cache is intentionally opt-in because it stores prompt/response content locally under `cache/responses`.
+Recommended beta/default state:
+
+```text
+COSTGUARD_CACHE_MODE=disabled
+COSTGUARD_CACHE_STORE_CONTENT=false
+```
+
+Controlled basic-cache test state:
 
 ```text
 COSTGUARD_CACHE_STORE_CONTENT=true
 COSTGUARD_CACHE_TTL_SECONDS=86400
+COSTGUARD_CACHE_MAX_ENTRIES=1000
+COSTGUARD_CACHE_MAX_SIZE_MB=100
+COSTGUARD_CACHE_EVICTION_POLICY=lru
 ```
 
-Do not enable content storage on shared or untrusted machines. The cache does not store API keys or headers, skips streaming/tool/multimodal/secret-like requests, and only stores successful 2xx responses.
+Basic cache is intentionally opt-in because it stores prompt/response content locally under `cache/responses`. Do not enable content storage with prompts that may contain secrets, client data, credentials, tokens, `.env` content, or anything that should not persist locally.
 
-Validate basic cache with two identical direct proxy requests, then check:
+The response cache does not store API keys or headers, skips streaming/tool/multimodal/secret-like requests, only stores successful 2xx responses, expires entries by TTL, and evicts old entries by `COSTGUARD_CACHE_EVICTION_POLICY` when `COSTGUARD_CACHE_MAX_ENTRIES` or `COSTGUARD_CACHE_MAX_SIZE_MB` is exceeded.
+
+`costguard cache clear` clears response/vector runtime cache and preserves `cache/models.json`. Use `--pricing` or `--pricing-only` only when you intentionally want to delete the pricing catalog cache.
+
+Validate basic cache with two identical direct proxy requests, not Cline first. Cline can add history, tool metadata, context, or small internal differences, so two prompts that look identical may not produce the same cache key.
 
 ```bash
 costguard usage today
 ```
 
 Expected evidence is `cache_misses=1`, `cache_hits=1`, and positive `cache_tokens_saved` for the repeated request.
+
+`costguard cache status` fields:
+
+```text
+mode                  disabled, basic, or semantic
+path                  response cache folder, or vector folder in semantic mode
+store_content         False means metadata-only; True allows response replay
+functional            True only when the current mode/config can return cached responses
+ttl_seconds           response cache entry lifetime
+max_entries           response cache entry limit
+max_size_mb/bytes     response cache disk limit
+eviction_policy       lru or fifo
+expired_entries       expired entries removed during status/write/clear
+evicted_entries       entries removed because limits were exceeded
+entries               current mode entry count
+response_entries      cached response count
+pricing_cache         whether cache/models.json exists
+vector_entries        semantic/vector cache file count
+size_bytes            approximate cache disk size
+note                  metadata-only, semantic experimental, or n/a
+```
+
+To return to the safe default:
+
+```bash
+costguard cache disable
+# then set locally:
+COSTGUARD_CACHE_STORE_CONTENT=false
+```
 
 ## Headroom
 

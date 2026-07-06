@@ -60,6 +60,10 @@ Cache is disabled by default. Basic response cache is also metadata-only until `
 
 When content storage is enabled, Cost Guard stores full cached response bodies and enough request-derived data to replay exact matches under `cache/responses/`. It does not store API keys or request headers, but prompts and responses can still contain sensitive business context. Enable it only on trusted local workstations, do not use it with secrets, and do not commit cache files.
 
+Response cache has TTL, max-entry, max-size, and eviction controls. These controls reduce local footprint but are not a substitute for data classification: do not cache secrets, client data, credentials, tokens, `.env` content, or sensitive screenshots/logs.
+
+`cache/models.json` is the pricing catalog cache and is separate from response cache. `costguard cache clear` preserves pricing cache by default; delete it only with `--pricing` or `--pricing-only`.
+
 Semantic/vector cache is scaffolded only; embeddings are not active in the base solution.
 
 ## Headroom Risks

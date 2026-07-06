@@ -74,6 +74,17 @@ Cache is optional and disabled by default.
 
 `cache/responses/` is the basic exact-match response cache. It becomes functional only when `COSTGUARD_CACHE_MODE=basic` and `COSTGUARD_CACHE_STORE_CONTENT=true`. Cost Guard hashes the request shape, model alias, resolved upstream model, endpoint identity, and payload to find identical requests. It does not store request headers or API keys. It skips streaming, tools/functions, multimodal/file inputs, secret-like payloads, and upstream errors.
 
+Response cache limits are local and conservative by default:
+
+```text
+COSTGUARD_CACHE_TTL_SECONDS=86400
+COSTGUARD_CACHE_MAX_ENTRIES=1000
+COSTGUARD_CACHE_MAX_SIZE_MB=100
+COSTGUARD_CACHE_EVICTION_POLICY=lru
+```
+
+Expired entries are removed during status/read/write/clear-expired paths. If the response cache exceeds entry or size limits, Cost Guard evicts entries using LRU by default. Pricing cache is not part of response-cache eviction and is not deleted by `costguard cache clear` unless the user explicitly passes `--pricing`.
+
 `vector_cache/` is reserved for semantic cache work. The CLI can create and clear the folder, but embeddings/vector lookup are not active yet.
 
 ## Headroom
@@ -109,7 +120,7 @@ It validates the local API key, applies a basic secret filter, maps model aliase
 
 - Cost estimates are approximate.
 - Streaming support is not implemented in the MVP.
-- Semantic cache is scaffolded/experimental, not a full vector implementation.
+- Semantic cache is scaffolded/experimental, not a full vector implementation. It should not be presented as functional until embeddings, vector storage, similarity thresholds, semantic hit/miss metrics, and tests exist.
 - Headroom requires a compatible external adapter; no adapter is bundled in the base package.
 - Cline still requires manual configuration.
 - Upstream-specific edge cases may need adapter improvements.

@@ -76,6 +76,13 @@ COSTGUARD_PRICING_API_KEY_ENV=OPENAI_UPSTREAM_API_KEY
 COSTGUARD_PRICING_API_KEY=
 COSTGUARD_PRICING_AUTH_HEADER=x-api-key
 COSTGUARD_PRICING_AUTH_SCHEME=
+
+# Safe default for response cache.
+COSTGUARD_CACHE_MODE=disabled
+COSTGUARD_CACHE_STORE_CONTENT=false
+COSTGUARD_CACHE_MAX_ENTRIES=1000
+COSTGUARD_CACHE_MAX_SIZE_MB=100
+COSTGUARD_CACHE_EVICTION_POLICY=lru
 ```
 
 `OPENAI_UPSTREAM_BASE_URL` calls models. `COSTGUARD_PRICING_URL` fetches model prices. They are different endpoints; they may share the same key if your company allows it.
@@ -142,6 +149,8 @@ costguard usage today
 ```
 
 For Headroom validation, look for `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`. `outputs_reduced` means output truncation, not Headroom compression.
+
+For basic cache validation, do not start with Cline. Enable `basic`, set `COSTGUARD_CACHE_STORE_CONTENT=true` only for safe test prompts, send two identical direct proxy requests, and expect `cache_misses=1`, `cache_hits=1`. Return to the safe default with `costguard cache disable` and `COSTGUARD_CACHE_STORE_CONTENT=false`.
 
 ## Common Errors
 

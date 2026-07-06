@@ -233,14 +233,17 @@ headroom_reduction_ratio > 0
 
 ## 9. Optional Basic Cache Check
 
-Run only when validating repeated-request behavior. This stores prompt/response content locally, so use safe test prompts and never include secrets.
+Run only when validating repeated-request behavior. This stores prompt/response content locally, so use safe test prompts and never include secrets, client data, credentials, `.env` content, or sensitive business context.
 
 ```powershell
 uv run costguard cache enable --mode basic
 $env:COSTGUARD_CACHE_STORE_CONTENT = "true"
+$env:COSTGUARD_CACHE_MAX_ENTRIES = "1000"
+$env:COSTGUARD_CACHE_MAX_SIZE_MB = "100"
+$env:COSTGUARD_CACHE_EVICTION_POLICY = "lru"
 ```
 
-Send the same safe direct proxy request twice, then check:
+Send the same safe direct proxy request twice, not a Cline prompt first. Cline can add task history, tool metadata, context, or tiny request differences that change the cache key.
 
 ```powershell
 costguard usage today
@@ -255,7 +258,16 @@ cache_hits=1
 cache_tokens_saved > 0
 ```
 
-Semantic cache is not a production embeddings cache yet; keep it disabled unless you are working on that feature.
+If the first direct request is a miss and the second identical direct request is a hit, basic response cache is validated. After that, you can try Cline, but do not assume it will hit for visually similar prompts.
+
+Return to the safe default:
+
+```powershell
+uv run costguard cache disable
+$env:COSTGUARD_CACHE_STORE_CONTENT = "false"
+```
+
+Semantic cache is not a production embeddings cache yet; keep it disabled unless you are working on embeddings/vector retrieval, similarity thresholds, semantic hit metrics, and tests.
 
 ## 10. Optional Isolated Setup Smoke
 

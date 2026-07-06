@@ -237,11 +237,39 @@ costguard uninstall --purge --yes
 ```bash
 costguard cache clear
 costguard cache clear --responses
+costguard cache clear --responses-only
 costguard cache clear --pricing
+costguard cache clear --pricing-only
 costguard cache clear --vectors
+costguard cache clear --vectors-only
+costguard cache clear --expired
 ```
 
-Default clear removes response/vector runtime cache and preserves the pricing catalog. Use `--pricing` only when you want to remove `cache/models.json`.
+Default clear removes response/vector runtime cache and preserves the pricing catalog. Use `--pricing` or `--pricing-only` only when you want to remove `cache/models.json`.
+
+If basic cache shows no hits:
+
+```bash
+costguard cache status
+```
+
+Check:
+
+```text
+mode=basic
+store_content=True
+functional=True
+```
+
+If `store_content=False`, basic cache is metadata-only and will not return cached responses. If testing through Cline, validate first with two identical direct proxy requests because Cline can add context, history, or tool metadata that changes the cache key.
+
+If cache grows too much, lower the local limits:
+
+```text
+COSTGUARD_CACHE_MAX_ENTRIES=1000
+COSTGUARD_CACHE_MAX_SIZE_MB=100
+COSTGUARD_CACHE_EVICTION_POLICY=lru
+```
 
 ## Review Logs
 

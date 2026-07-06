@@ -47,7 +47,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Usage visibility | `costguard usage today/month` shows requests, estimated tokens, estimated cost, top model, rule hits, budget blocks, security blocks, output truncation, and Headroom compression evidence. |
 | Budget control | Daily/monthly budget modes can warn, block premium models, or block all new calls. |
 | Real pricing support | Optional `costguard pricing refresh` can cache model prices from a company/provider catalog instead of relying on fallback estimates. |
-| Basic response cache | Optional exact-match cache can avoid repeat upstream calls when explicitly enabled for local content storage. |
+| Basic response cache | Optional exact-match cache can avoid repeat upstream calls when `basic` mode and local content storage are explicitly enabled. |
 | Output reduction | Rules rewrite noisy commands such as full `git diff` or `find .`; output limits truncate oversized responses. |
 | Secret guardrails | Default rules block `.env`, key-like files, Terraform state/vars, and secret-like payloads. |
 | Debug clarity | Docs distinguish local Cost Guard budget decisions from upstream quota errors such as HTTP 429. |
@@ -106,6 +106,18 @@ These pieces are available but disabled or opt-in by default:
 
 `OPENAI_UPSTREAM_BASE_URL` and `ANTHROPIC_UPSTREAM_BASE_URL` are inference endpoints used to call models. `COSTGUARD_PRICING_URL` is a separate catalog endpoint used only to fetch model prices. A company may use the same API key for both, or provide different keys; configure that locally in `.env`.
 
+Cache defaults are intentionally conservative:
+
+```text
+COSTGUARD_CACHE_MODE=disabled
+COSTGUARD_CACHE_STORE_CONTENT=false
+COSTGUARD_CACHE_MAX_ENTRIES=1000
+COSTGUARD_CACHE_MAX_SIZE_MB=100
+COSTGUARD_CACHE_EVICTION_POLICY=lru
+```
+
+`basic` response cache has been validated with direct identical proxy requests: first request is a miss, second identical request is a hit. Do not use Cline as the first cache test because it may add task history, tool metadata, or small request differences that change the cache key.
+
 ## What It Does
 
 - Runs a localhost proxy on `127.0.0.1:4040`.
@@ -136,6 +148,7 @@ These pieces are available but disabled or opt-in by default:
 - It does not store prompt/response content unless response cache content storage is explicitly enabled in local `.env`.
 - It does not require Headroom for the base product; install `ai-costguard[headroom]` or `headroom-ai` separately to enable it.
 - It does not apply Headroom compression unless a compatible adapter is installed and explicitly enabled.
+- It does not provide production semantic/vector cache yet; that remains experimental until embeddings, vector storage, similarity thresholds, and tests are implemented.
 
 ## Install
 

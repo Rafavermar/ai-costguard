@@ -253,6 +253,67 @@ costguard pricing status
 
 El pricing endpoint debe ser generico y de la empresa/proveedor que se este usando. No hardcodees precios reales ni endpoints reales en el repo.
 
+## Cache basico, opcional y controlado
+
+Estado seguro recomendado:
+
+```text
+COSTGUARD_CACHE_MODE=disabled
+COSTGUARD_CACHE_STORE_CONTENT=false
+```
+
+No actives `COSTGUARD_CACHE_STORE_CONTENT=true` con prompts que puedan contener secretos, datos de cliente, credenciales, tokens, `.env`, logs sensibles o informacion que no deba persistirse localmente.
+
+Para validar cache basico, usa primero llamadas directas identicas al proxy, no Cline. Cline puede anadir historial, herramientas, metadata o diferencias internas que cambian la cache key aunque el prompt parezca igual.
+
+Si yo pido validar cache basico:
+
+```powershell
+costguard cache enable --mode basic
+$env:COSTGUARD_CACHE_STORE_CONTENT = "true"
+$env:COSTGUARD_CACHE_MAX_ENTRIES = "1000"
+$env:COSTGUARD_CACHE_MAX_SIZE_MB = "100"
+$env:COSTGUARD_CACHE_EVICTION_POLICY = "lru"
+```
+
+Haz dos llamadas directas identicas y seguras al proxy local con:
+
+```text
+POST http://127.0.0.1:4040/v1/chat/completions
+Authorization: Bearer sk-costguard-local
+model: cg-cheap o cg-active
+temperature: 0
+max_tokens: 10
+message: Responde exactamente: CACHE TEST OK
+```
+
+Despues revisa:
+
+```powershell
+costguard usage today
+costguard cache status
+```
+
+Evidencia esperada:
+
+```text
+cache_misses=1
+cache_hits=1
+cache_hit_ratio=0.5
+cache_tokens_saved > 0
+response_entries=1
+functional=True
+```
+
+Despues de la prueba vuelve al estado seguro:
+
+```powershell
+costguard cache disable
+$env:COSTGUARD_CACHE_STORE_CONTENT = "false"
+```
+
+Semantic cache sigue siendo experimental hasta que existan embeddings, vector storage, similarity threshold, metricas de semantic hits/misses y tests.
+
 ## Configuracion de Cline
 
 Muestrame que poner en Cline:

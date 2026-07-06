@@ -283,11 +283,24 @@ def cache_disable() -> None:
 
 @cache_app.command("clear")
 def cache_clear(
-    responses: bool = typer.Option(False, "--responses", help="Clear exact-match response cache only."),
-    pricing: bool = typer.Option(False, "--pricing", help="Clear pricing catalog cache only."),
-    vectors: bool = typer.Option(False, "--vectors", help="Clear semantic/vector cache only."),
+    responses: bool = typer.Option(False, "--responses", "--responses-only", help="Clear exact-match response cache only."),
+    pricing: bool = typer.Option(False, "--pricing", "--pricing-only", help="Clear pricing catalog cache only."),
+    vectors: bool = typer.Option(False, "--vectors", "--vectors-only", help="Clear semantic/vector cache only."),
+    expired: bool = typer.Option(False, "--expired", help="Clear expired response cache entries only."),
 ) -> None:
-    _print_cache(cache_mod.clear(responses_only=responses, pricing_only=pricing, vectors_only=vectors))
+    _print_cache(
+        cache_mod.clear(
+            responses_only=responses,
+            pricing_only=pricing,
+            vectors_only=vectors,
+            expired_only=expired,
+        )
+    )
+
+
+@cache_app.command("inspect")
+def cache_inspect(limit: int = typer.Option(20, "--limit", help="Maximum response cache metadata entries to show.")) -> None:
+    _print_cache(cache_mod.inspect(limit=limit))
 
 
 def _print_cache(data: dict[str, object]) -> None:
