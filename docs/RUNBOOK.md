@@ -118,6 +118,11 @@ headroom_input_tokens_before estimated input tokens before Headroom
 headroom_input_tokens_after  estimated input tokens after Headroom
 headroom_tokens_saved        estimated input tokens saved by Headroom
 headroom_reduction_ratio     estimated saved/input ratio, for example 0.35 means 35%
+cache_hits                   requests served from local response cache
+cache_misses                 cacheable requests sent upstream and then stored
+cache_hit_ratio              hits divided by hits + misses
+cache_tokens_saved           estimated tokens not sent upstream because of cache hits
+cache_cost_saved             estimated local cost avoided because of cache hits
 ```
 
 Do not use `outputs_reduced` as Headroom evidence. It belongs to output limits, not request compression.
@@ -233,16 +238,42 @@ Pricing refresh stores normalized prices in `config/pricing.yaml` and the raw mo
 
 ## Cache
 
-Manage optional local cache state.
+Manage optional local cache state. Pricing cache is separate from response cache.
 
 ```bash
 costguard cache status
 costguard cache enable --mode basic
 costguard cache disable
 costguard cache clear
+costguard cache clear --responses
+costguard cache clear --pricing
+costguard cache clear --vectors
 ```
 
-Semantic mode is scaffolded for a future vector engine.
+Cache modes:
+
+```text
+disabled  no response cache
+basic     exact-match response cache; requires COSTGUARD_CACHE_STORE_CONTENT=true
+semantic  scaffolded/experimental; embeddings are not active yet
+```
+
+Basic cache is intentionally opt-in because it stores prompt/response content locally under `cache/responses`.
+
+```text
+COSTGUARD_CACHE_STORE_CONTENT=true
+COSTGUARD_CACHE_TTL_SECONDS=86400
+```
+
+Do not enable content storage on shared or untrusted machines. The cache does not store API keys or headers, skips streaming/tool/multimodal/secret-like requests, and only stores successful 2xx responses.
+
+Validate basic cache with two identical direct proxy requests, then check:
+
+```bash
+costguard usage today
+```
+
+Expected evidence is `cache_misses=1`, `cache_hits=1`, and positive `cache_tokens_saved` for the repeated request.
 
 ## Headroom
 

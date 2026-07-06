@@ -147,6 +147,8 @@ uv run costguard cache status
 
 Expected: tests pass, `.env` is blocked, noisy commands are rewritten, and status commands return local state.
 
+`basic` cache becomes functional only when `COSTGUARD_CACHE_STORE_CONTENT=true` is set locally. Keep content storage disabled during offline update validation unless you are explicitly testing response cache behavior.
+
 ## 7. Optional Pricing Catalog
 
 Configure only if the company/provider exposes a pricing catalog endpoint.
@@ -229,7 +231,33 @@ headroom_reduction_ratio > 0
 
 `outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response.
 
-## 9. Optional Isolated Setup Smoke
+## 9. Optional Basic Cache Check
+
+Run only when validating repeated-request behavior. This stores prompt/response content locally, so use safe test prompts and never include secrets.
+
+```powershell
+uv run costguard cache enable --mode basic
+$env:COSTGUARD_CACHE_STORE_CONTENT = "true"
+```
+
+Send the same safe direct proxy request twice, then check:
+
+```powershell
+costguard usage today
+costguard cache status
+```
+
+Expected evidence:
+
+```text
+cache_misses=1
+cache_hits=1
+cache_tokens_saved > 0
+```
+
+Semantic cache is not a production embeddings cache yet; keep it disabled unless you are working on that feature.
+
+## 10. Optional Isolated Setup Smoke
 
 Use repo-local temp paths to avoid touching real home config.
 

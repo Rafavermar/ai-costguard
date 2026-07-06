@@ -282,8 +282,12 @@ def cache_disable() -> None:
 
 
 @cache_app.command("clear")
-def cache_clear() -> None:
-    _print_cache(cache_mod.clear())
+def cache_clear(
+    responses: bool = typer.Option(False, "--responses", help="Clear exact-match response cache only."),
+    pricing: bool = typer.Option(False, "--pricing", help="Clear pricing catalog cache only."),
+    vectors: bool = typer.Option(False, "--vectors", help="Clear semantic/vector cache only."),
+) -> None:
+    _print_cache(cache_mod.clear(responses_only=responses, pricing_only=pricing, vectors_only=vectors))
 
 
 def _print_cache(data: dict[str, object]) -> None:

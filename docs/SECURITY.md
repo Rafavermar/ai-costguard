@@ -56,7 +56,11 @@ The proxy also blocks payloads that look like private keys or API key assignment
 
 ## Cache Risks
 
-Cache is disabled by default. Even when enabled, the MVP stores hashes, metadata, and safe summaries rather than full prompts or responses. Treat any cache as sensitive local developer data.
+Cache is disabled by default. Basic response cache is also metadata-only until `COSTGUARD_CACHE_STORE_CONTENT=true` is set locally.
+
+When content storage is enabled, Cost Guard stores full cached response bodies and enough request-derived data to replay exact matches under `cache/responses/`. It does not store API keys or request headers, but prompts and responses can still contain sensitive business context. Enable it only on trusted local workstations, do not use it with secrets, and do not commit cache files.
+
+Semantic/vector cache is scaffolded only; embeddings are not active in the base solution.
 
 ## Headroom Risks
 

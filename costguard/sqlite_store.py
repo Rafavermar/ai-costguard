@@ -32,7 +32,12 @@ CREATE TABLE IF NOT EXISTS usage_events (
     headroom_input_tokens_before INTEGER NOT NULL DEFAULT 0,
     headroom_input_tokens_after INTEGER NOT NULL DEFAULT 0,
     headroom_tokens_saved INTEGER NOT NULL DEFAULT 0,
-    headroom_reduction_ratio REAL NOT NULL DEFAULT 0.0
+    headroom_reduction_ratio REAL NOT NULL DEFAULT 0.0,
+    cache_hit INTEGER NOT NULL DEFAULT 0,
+    cache_miss INTEGER NOT NULL DEFAULT 0,
+    cache_mode TEXT,
+    cache_tokens_saved INTEGER NOT NULL DEFAULT 0,
+    cache_cost_saved REAL NOT NULL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (
@@ -53,6 +58,11 @@ USAGE_EVENT_COLUMNS: dict[str, str] = {
     "headroom_input_tokens_after": "INTEGER NOT NULL DEFAULT 0",
     "headroom_tokens_saved": "INTEGER NOT NULL DEFAULT 0",
     "headroom_reduction_ratio": "REAL NOT NULL DEFAULT 0.0",
+    "cache_hit": "INTEGER NOT NULL DEFAULT 0",
+    "cache_miss": "INTEGER NOT NULL DEFAULT 0",
+    "cache_mode": "TEXT",
+    "cache_tokens_saved": "INTEGER NOT NULL DEFAULT 0",
+    "cache_cost_saved": "REAL NOT NULL DEFAULT 0.0",
 }
 
 
@@ -112,6 +122,11 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
         "headroom_input_tokens_after": int(event.get("headroom_input_tokens_after", 0)),
         "headroom_tokens_saved": int(event.get("headroom_tokens_saved", 0)),
         "headroom_reduction_ratio": float(event.get("headroom_reduction_ratio", 0.0)),
+        "cache_hit": int(bool(event.get("cache_hit", False))),
+        "cache_miss": int(bool(event.get("cache_miss", False))),
+        "cache_mode": event.get("cache_mode"),
+        "cache_tokens_saved": int(event.get("cache_tokens_saved", 0)),
+        "cache_cost_saved": float(event.get("cache_cost_saved", 0.0)),
     }
     with connect(path) as connection:
         connection.execute(
@@ -122,7 +137,8 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
                 budget_action, security_event, output_reduced, headroom_applied,
                 headroom_adapter, headroom_input_chars_before, headroom_input_chars_after,
                 headroom_input_tokens_before, headroom_input_tokens_after,
-                headroom_tokens_saved, headroom_reduction_ratio
+                headroom_tokens_saved, headroom_reduction_ratio, cache_hit, cache_miss,
+                cache_mode, cache_tokens_saved, cache_cost_saved
             )
             VALUES (
                 :timestamp, :client, :model_alias, :upstream, :input_chars, :output_chars,
@@ -130,7 +146,8 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
                 :budget_action, :security_event, :output_reduced, :headroom_applied,
                 :headroom_adapter, :headroom_input_chars_before, :headroom_input_chars_after,
                 :headroom_input_tokens_before, :headroom_input_tokens_after,
-                :headroom_tokens_saved, :headroom_reduction_ratio
+                :headroom_tokens_saved, :headroom_reduction_ratio, :cache_hit, :cache_miss,
+                :cache_mode, :cache_tokens_saved, :cache_cost_saved
             )
             """,
             payload,
@@ -173,7 +190,11 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
                    COALESCE(SUM(headroom_input_chars_after), 0) AS headroom_input_chars_after,
                    COALESCE(SUM(headroom_input_tokens_before), 0) AS headroom_input_tokens_before,
                    COALESCE(SUM(headroom_input_tokens_after), 0) AS headroom_input_tokens_after,
-                   COALESCE(SUM(headroom_tokens_saved), 0) AS headroom_tokens_saved
+                   COALESCE(SUM(headroom_tokens_saved), 0) AS headroom_tokens_saved,
+                   COALESCE(SUM(cache_hit), 0) AS cache_hits,
+                   COALESCE(SUM(cache_miss), 0) AS cache_misses,
+                   COALESCE(SUM(cache_tokens_saved), 0) AS cache_tokens_saved,
+                   COALESCE(SUM(cache_cost_saved), 0) AS cache_cost_saved
             FROM usage_events
             WHERE {clause}
             """,
@@ -195,6 +216,9 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
     headroom_reduction_ratio = (
         headroom_tokens_saved / headroom_tokens_before if headroom_tokens_before > 0 else 0.0
     )
+    cache_hits = int(row["cache_hits"])
+    cache_misses = int(row["cache_misses"])
+    cache_total = cache_hits + cache_misses
     return {
         "requests": int(row["requests"]),
         "tokens": int(row["tokens"]),
@@ -211,4 +235,9 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
         "headroom_input_tokens_after": int(row["headroom_input_tokens_after"]),
         "headroom_tokens_saved": headroom_tokens_saved,
         "headroom_reduction_ratio": headroom_reduction_ratio,
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "cache_hit_ratio": cache_hits / cache_total if cache_total else 0.0,
+        "cache_tokens_saved": int(row["cache_tokens_saved"]),
+        "cache_cost_saved": float(row["cache_cost_saved"]),
     }

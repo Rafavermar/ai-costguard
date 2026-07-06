@@ -236,7 +236,12 @@ costguard uninstall --purge --yes
 
 ```bash
 costguard cache clear
+costguard cache clear --responses
+costguard cache clear --pricing
+costguard cache clear --vectors
 ```
+
+Default clear removes response/vector runtime cache and preserves the pricing catalog. Use `--pricing` only when you want to remove `cache/models.json`.
 
 ## Review Logs
 

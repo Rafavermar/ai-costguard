@@ -56,6 +56,10 @@ def cache_dir(home: Path | None = None) -> Path:
     return (home or costguard_home()) / "cache"
 
 
+def response_cache_dir(home: Path | None = None) -> Path:
+    return cache_dir(home) / "responses"
+
+
 def vector_cache_dir(home: Path | None = None) -> Path:
     return (home or costguard_home()) / "vector_cache"
 

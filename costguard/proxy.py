@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from . import budget, config, headroom, paths, rules
+from . import budget, cache as cache_mod, config, headroom, paths, rules
 from .sqlite_store import record_usage
 
 
@@ -152,6 +152,72 @@ class CostGuardHandler(BaseHTTPRequestHandler):
         input_chars = len(body_text)
         estimated_tokens = budget.estimate_tokens(input_chars)
         estimated_cost = budget.estimate_cost(model_alias, estimated_tokens, self.home)
+
+        if client == "cline":
+            upstream = env.get("OPENAI_UPSTREAM_BASE_URL", "")
+            upstream_key = env.get("OPENAI_UPSTREAM_API_KEY", "")
+            headers = {"authorization": f"Bearer {upstream_key}", "content-type": "application/json"}
+        else:
+            upstream = env.get("ANTHROPIC_UPSTREAM_BASE_URL", "")
+            upstream_key = env.get("ANTHROPIC_UPSTREAM_API_KEY", "")
+            headers = {
+                "x-api-key": upstream_key,
+                "anthropic-version": self.headers.get("anthropic-version", "2023-06-01"),
+                "content-type": "application/json",
+            }
+
+        if not upstream or not upstream_key:
+            _json_response(self, 502, {"error": f"missing upstream configuration for {client}"})
+            return
+
+        cache_mode = config.cache_mode(self.home)
+        cache_attempt = False
+        cache_key_value: str | None = None
+        if cache_mode == "basic" and cache_mod.store_content_enabled(env):
+            cacheable, _reason = cache_mod.request_cacheable(payload, security_event)
+            if cacheable:
+                cache_attempt = True
+                cache_key_value = cache_mod.cache_key(
+                    client=client,
+                    path=self.path,
+                    model_alias=model_alias,
+                    upstream_model=str(payload.get("model", "")),
+                    upstream_base_url=upstream,
+                    payload=payload,
+                )
+                cached_response = cache_mod.load_response(cache_key_value, self.home, env)
+                if cached_response is not None:
+                    cached_body = bytes(cached_response["body"])
+                    saved_tokens = int(cached_response.get("estimated_tokens", 0))
+                    saved_cost = float(cached_response.get("estimated_cost", 0.0))
+                    record_usage(
+                        {
+                            "client": client,
+                            "model_alias": model_alias,
+                            "upstream": "cache",
+                            "input_chars": input_chars,
+                            "output_chars": int(cached_response.get("output_chars", len(cached_body))),
+                            "estimated_tokens": 0,
+                            "estimated_cost": 0.0,
+                            "rule_applied": headroom_rule,
+                            "budget_action": "allow",
+                            "active_budget": config.load_settings(self.home).get("budget", {}).get("mode", "warn"),
+                            "security_event": security_event,
+                            "cache_hit": True,
+                            "cache_mode": cache_mode,
+                            "cache_tokens_saved": saved_tokens,
+                            "cache_cost_saved": saved_cost,
+                            **headroom_metrics,
+                        },
+                        paths.db_path(self.home),
+                    )
+                    self.send_response(int(cached_response["status_code"]))
+                    self.send_header("content-type", str(cached_response["content_type"]))
+                    self.send_header("content-length", str(len(cached_body)))
+                    self.end_headers()
+                    self.wfile.write(cached_body)
+                    return
+
         decision = budget.check_budget(model_alias, estimated_cost, self.home)
         if decision.blocked:
             record_usage(
@@ -172,23 +238,6 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                 paths.db_path(self.home),
             )
             _json_response(self, 402, {"error": decision.reason, "budget_action": decision.action})
-            return
-
-        if client == "cline":
-            upstream = env.get("OPENAI_UPSTREAM_BASE_URL", "")
-            upstream_key = env.get("OPENAI_UPSTREAM_API_KEY", "")
-            headers = {"authorization": f"Bearer {upstream_key}", "content-type": "application/json"}
-        else:
-            upstream = env.get("ANTHROPIC_UPSTREAM_BASE_URL", "")
-            upstream_key = env.get("ANTHROPIC_UPSTREAM_API_KEY", "")
-            headers = {
-                "x-api-key": upstream_key,
-                "anthropic-version": self.headers.get("anthropic-version", "2023-06-01"),
-                "content-type": "application/json",
-            }
-
-        if not upstream or not upstream_key:
-            _json_response(self, 502, {"error": f"missing upstream configuration for {client}"})
             return
 
         upstream_url = _append_path(upstream, self.path)
@@ -217,6 +266,31 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                     final_body = limited_text.encode("utf-8")
                     output_reduced = True
 
+        total_tokens = budget.estimate_tokens(input_chars, output_chars)
+        total_cost = budget.estimate_cost(
+            model_alias,
+            budget.estimate_tokens(input_chars),
+            self.home,
+            output_tokens=budget.estimate_tokens(output_chars),
+        )
+        content_type = response.headers.get("content-type", "application/json")
+        if cache_attempt and cache_key_value:
+            cache_mod.store_response(
+                key=cache_key_value,
+                body=final_body,
+                status_code=response.status_code,
+                content_type=content_type,
+                output_chars=len(final_body.decode("utf-8", errors="replace")),
+                estimated_tokens=total_tokens,
+                estimated_cost=total_cost,
+                client=client,
+                path=self.path,
+                model_alias=model_alias,
+                upstream_model=str(payload.get("model", "")),
+                home=self.home,
+                env=env,
+            )
+
         record_usage(
             {
                 "client": client,
@@ -224,25 +298,22 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                 "upstream": upstream,
                 "input_chars": input_chars,
                 "output_chars": output_chars,
-                "estimated_tokens": budget.estimate_tokens(input_chars, output_chars),
-                "estimated_cost": budget.estimate_cost(
-                    model_alias,
-                    budget.estimate_tokens(input_chars),
-                    self.home,
-                    output_tokens=budget.estimate_tokens(output_chars),
-                ),
+                "estimated_tokens": total_tokens,
+                "estimated_cost": total_cost,
                 "rule_applied": headroom_rule,
                 "budget_action": decision.action,
                 "active_budget": decision.mode,
                 "security_event": security_event,
                 "output_reduced": output_reduced,
+                "cache_miss": cache_attempt,
+                "cache_mode": cache_mode if cache_attempt else None,
                 **headroom_metrics,
             },
             paths.db_path(self.home),
         )
 
         self.send_response(response.status_code)
-        self.send_header("content-type", response.headers.get("content-type", "application/json"))
+        self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(final_body)))
         self.end_headers()
         self.wfile.write(final_body)

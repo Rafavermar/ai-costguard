@@ -42,6 +42,8 @@ hooks/
 bin/
 logs/
 cache/
+cache/responses/
+cache/models.json
 vector_cache/
 backups/
 ```
@@ -64,11 +66,15 @@ This is intentionally provider-neutral. A company can point Cost Guard at its ow
 
 The canonical fixed Cost Guard model aliases are `cg-cheap`, `cg-standard`, and `cg-strong`. They are local categories, not provider names. Each workstation maps those aliases to approved real model IDs in `.env`. The dynamic alias `cg-active` lets clients such as Cline follow the active category without editing client settings after each switch.
 
-## Semantic Cache
+## Cache
 
-The semantic/vector cache is optional. It is intended to store safe summaries and metadata so repeated repository context, docs, errors, logs, or large files do not need to be resent. It does not replace SQLite, and it is disabled by default.
+Cache is optional and disabled by default.
 
-The MVP includes commands and local storage structure. A vector engine can be added later behind the same interface.
+`cache/models.json` is the pricing catalog cache written by `costguard pricing refresh`. It stores provider model metadata and prices, not API keys.
+
+`cache/responses/` is the basic exact-match response cache. It becomes functional only when `COSTGUARD_CACHE_MODE=basic` and `COSTGUARD_CACHE_STORE_CONTENT=true`. Cost Guard hashes the request shape, model alias, resolved upstream model, endpoint identity, and payload to find identical requests. It does not store request headers or API keys. It skips streaming, tools/functions, multimodal/file inputs, secret-like payloads, and upstream errors.
+
+`vector_cache/` is reserved for semantic cache work. The CLI can create and clear the folder, but embeddings/vector lookup are not active yet.
 
 ## Headroom
 
@@ -97,13 +103,13 @@ The proxy exposes:
 - `/v1/chat/completions` for OpenAI-compatible Cline traffic
 - `/v1/messages` for Anthropic-compatible Claude Code traffic
 
-It validates the local API key, applies a basic secret filter, checks budgets, maps model aliases, estimates cost from local pricing or fallback settings, forwards to the configured upstream, applies output limits where possible, and stores metadata in SQLite.
+It validates the local API key, applies a basic secret filter, maps model aliases, optionally serves an exact-match response cache hit, checks budgets for cache misses, estimates cost from local pricing or fallback settings, forwards to the configured upstream, applies output limits where possible, and stores metadata in SQLite.
 
 ## Limitations
 
 - Cost estimates are approximate.
 - Streaming support is not implemented in the MVP.
-- Semantic cache is scaffolded, not a full vector implementation.
+- Semantic cache is scaffolded/experimental, not a full vector implementation.
 - Headroom requires a compatible external adapter; no adapter is bundled in the base package.
 - Cline still requires manual configuration.
 - Upstream-specific edge cases may need adapter improvements.

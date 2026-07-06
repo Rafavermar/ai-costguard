@@ -47,6 +47,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Usage visibility | `costguard usage today/month` shows requests, estimated tokens, estimated cost, top model, rule hits, budget blocks, security blocks, output truncation, and Headroom compression evidence. |
 | Budget control | Daily/monthly budget modes can warn, block premium models, or block all new calls. |
 | Real pricing support | Optional `costguard pricing refresh` can cache model prices from a company/provider catalog instead of relying on fallback estimates. |
+| Basic response cache | Optional exact-match cache can avoid repeat upstream calls when explicitly enabled for local content storage. |
 | Output reduction | Rules rewrite noisy commands such as full `git diff` or `find .`; output limits truncate oversized responses. |
 | Secret guardrails | Default rules block `.env`, key-like files, Terraform state/vars, and secret-like payloads. |
 | Debug clarity | Docs distinguish local Cost Guard budget decisions from upstream quota errors such as HTTP 429. |
@@ -95,7 +96,7 @@ These pieces are available but disabled or opt-in by default:
 
 | Component | Default | Purpose |
 | --- | --- | --- |
-| Cache | Disabled | Local scaffold for basic or semantic cache modes. |
+| Cache | Disabled | Basic exact-match response cache is functional but opt-in; semantic/vector mode is scaffolded for a future embeddings design. |
 | Headroom | Disabled | Optional request compression via `headroom-ai` in library mode. Cost Guard calls `headroom.compress(messages, model=...)` when installed and enabled. |
 | Pricing refresh | Not run | `costguard pricing refresh` reads `COSTGUARD_PRICING_URL` and caches provider model prices locally. |
 | Project attach | Not run | `costguard attach` writes project-local Claude metadata only when explicitly requested. |
@@ -115,6 +116,7 @@ These pieces are available but disabled or opt-in by default:
 - Blocks secret-like paths and commands such as `cat .env`.
 - Rewrites noisy commands such as full `git diff` and `find .`.
 - Logs usage metadata to local SQLite without prompts or responses by default.
+- Can serve repeated identical requests from a local exact-match cache when `basic` mode and content storage are explicitly enabled.
 - Installs reversible Claude Code hooks and safe commands.
 - Helps reduce avoidable token usage by rewriting noisy commands and limiting oversized outputs.
 - Provides a simple feedback loop to tune usage patterns with `usage`, `budget`, `rules`, and optional `pricing` data.
@@ -131,6 +133,7 @@ These pieces are available but disabled or opt-in by default:
 - It does not expose the proxy outside localhost unless you explicitly choose another host.
 - It does not modify project repos unless you run `costguard attach`.
 - It does not store real API keys in Git.
+- It does not store prompt/response content unless response cache content storage is explicitly enabled in local `.env`.
 - It does not require Headroom for the base product; install `ai-costguard[headroom]` or `headroom-ai` separately to enable it.
 - It does not apply Headroom compression unless a compatible adapter is installed and explicitly enabled.
 
