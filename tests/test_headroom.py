@@ -10,8 +10,10 @@ from typing import Any
 
 import httpx
 import pytest
+from typer.testing import CliRunner
 
 from costguard import headroom, proxy, usage as usage_mod
+from costguard.cli import app
 from costguard.install import setup_costguard
 
 
@@ -45,6 +47,23 @@ def _install_fake_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.Mo
         compressed = [dict(message) for message in messages]
         compressed[0]["content"] = "short context"
         return CompressResult(compressed)
+
+    module.calls = []  # type: ignore[attr-defined]
+    module.compress = compress  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "headroom", module)
+    return module
+
+
+def _install_no_change_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    module = types.ModuleType("headroom")
+
+    class CompressResult:
+        def __init__(self, messages: list[dict[str, Any]]) -> None:
+            self.messages = messages
+
+    def compress(messages: list[dict[str, Any]], model: str) -> CompressResult:
+        module.calls.append({"messages": messages, "model": model})  # type: ignore[attr-defined]
+        return CompressResult([dict(message) for message in messages])
 
     module.calls = []  # type: ignore[attr-defined]
     module.compress = compress  # type: ignore[attr-defined]
@@ -262,3 +281,60 @@ def test_proxy_records_headroom_skip_reason_for_tools_request(isolated_env, monk
     assert summary["headroom_skipped_count"] == 1
     assert summary["headroom_last_skip_reason"] == "skipped_tools"
     assert summary["headroom_input_chars_before"] > 0
+
+
+def test_headroom_diagnostic_reports_metrics_without_content(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+    )
+
+    assert result["changed"] is True
+    assert result["adapter"] == "compress"
+    assert result["adapter_input_shape"] == "messages_list"
+    assert result["input_message_count"] == 1
+    assert result["input_chars_before"] > result["input_chars_after"]
+    assert result["tokens_saved"] > 0
+    assert result["skip_reason"] == "n/a"
+    assert result["content_printed"] is False
+    assert "Cost Guard validates" not in json.dumps(result)
+
+
+def test_headroom_diagnostic_reports_no_change(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    fake_headroom = _install_no_change_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+    )
+
+    assert fake_headroom.calls != []
+    assert result["changed"] is False
+    assert result["adapter"] == "compress"
+    assert result["skip_reason"] == "skipped_no_change"
+    assert result["tokens_saved"] == 0
+    assert result["input_chars_before"] == result["input_chars_after"]
+
+
+def test_cli_headroom_test_does_not_print_sample_content(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["headroom", "test", "--sample", "repeated", "--model", "cg-standard"])
+
+    assert result.exit_code == 0
+    assert "changed" in result.output
+    assert "True" in result.output
+    assert "Cost Guard validates" not in result.output

@@ -432,12 +432,29 @@ To validate Headroom end-to-end:
 
 ```powershell
 costguard headroom status
+costguard headroom test --sample repeated
 costguard start
 # Send a safe, non-secret, sufficiently long prompt from a new Cline task.
 costguard usage today
 ```
 
-Evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Small prompts may apply Headroom without saving much.
+Use offline samples before spending tokens:
+
+```powershell
+costguard headroom test --sample short
+costguard headroom test --sample repeated
+costguard headroom test --sample long-context
+```
+
+The command prints only metadata: adapter, input shape, message count, before/after chars, estimated tokens, `changed`, `skip_reason`, and result type. It does not print sample content or call the upstream model.
+
+If Headroom is installed but disabled and you only want an offline adapter check:
+
+```powershell
+costguard headroom test --sample repeated --force
+```
+
+Offline evidence is `changed=True`, positive `tokens_saved`, and positive `reduction_ratio`. Real traffic evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Small prompts may apply Headroom without saving much.
 
 If `headroom_applied_count` remains `0`, inspect:
 

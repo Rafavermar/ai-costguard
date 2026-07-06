@@ -54,7 +54,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Local audit trail | SQLite stores metadata by default, not prompt/response content. |
 | Optional Headroom compression | When a compatible Headroom adapter is installed and enabled, the proxy transforms request payloads before budget checks and upstream forwarding. |
 
-Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, skip count/reason, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content. `headroom status` proves installation/configuration; real compression is proven only when `headroom_applied_count > 0`.
+Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, skip count/reason, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content. `costguard headroom test --sample repeated` validates the adapter offline without calling an upstream model. `headroom status` proves installation/configuration; real compression is proven only when `changed=True` in offline test or `headroom_applied_count > 0` in real traffic.
 
 The improvement loop is deliberately simple: inspect usage, identify noisy patterns, tune YAML rules/budgets/model aliases, refresh pricing when available, and rerun. It is an operating guardrail, not an autonomous optimization system.
 
@@ -239,6 +239,7 @@ costguard rules test "git diff"
 costguard usage today
 costguard cache status
 costguard headroom status
+costguard headroom test --sample repeated
 costguard uninstall
 ```
 

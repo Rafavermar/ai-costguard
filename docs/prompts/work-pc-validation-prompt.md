@@ -303,7 +303,11 @@ uv sync --extra dev --extra headroom
 uv run costguard headroom status
 uv tool install --editable ".[headroom]" --link-mode=copy --force
 costguard headroom status
+costguard headroom test --sample repeated
+costguard headroom test --sample long-context
 ```
+
+`headroom test` is offline and does not call the upstream model. It prints metadata only and does not print sample content.
 
 End-to-end Headroom evidence requires real Cline/CostGuard traffic and consumes quota:
 

@@ -159,7 +159,7 @@ Cline may resend task history, system prompt, tool metadata, selected files, and
 costguard usage today
 ```
 
-For Headroom validation, look for `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`. If applied count is `0`, check `headroom_skipped_count` and `headroom_last_skip_reason`. `outputs_reduced` means output truncation, not Headroom compression.
+For Headroom validation, first run `costguard headroom test --sample repeated` offline. Then, for real traffic, look for `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`. If applied count is `0`, check `headroom_skipped_count` and `headroom_last_skip_reason`. `outputs_reduced` means output truncation, not Headroom compression.
 
 For basic cache validation, do not start with Cline. Enable `basic`, set `COSTGUARD_CACHE_STORE_CONTENT=true` only for safe test prompts, send two identical direct proxy requests, and expect `cache_misses=1`, `cache_hits=1`. Return to the safe default with `costguard cache disable` and `COSTGUARD_CACHE_STORE_CONTENT=false`.
 

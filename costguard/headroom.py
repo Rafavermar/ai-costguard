@@ -31,6 +31,9 @@ class TransformResult:
     applied: bool
     adapter: str | None = None
     skipped_reason: str | None = None
+    adapter_input_shape: str | None = None
+    adapter_result_type: str | None = None
+    error_type: str | None = None
 
 
 def available() -> bool:
@@ -95,9 +98,14 @@ def disable(home: Path | None = None, dry_run: bool = False) -> dict[str, Any]:
     return status(home)
 
 
-def transform_payload(payload: dict[str, Any], client: str, home: Path | None = None) -> TransformResult:
+def transform_payload(
+    payload: dict[str, Any],
+    client: str,
+    home: Path | None = None,
+    force_enabled: bool = False,
+) -> TransformResult:
     home = home or paths.costguard_home()
-    if not config.headroom_enabled(home):
+    if not config.headroom_enabled(home) and not force_enabled:
         return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_DISABLED)
 
     skip_reason = _skip_reason(payload, client)
@@ -109,6 +117,7 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
         return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_ADAPTER_ERROR)
 
     adapter_name, adapter_fn = adapter
+    adapter_input_shape = _adapter_input_shape(adapter_name)
     original_payload = json.loads(json.dumps(payload))
     working_payload = json.loads(json.dumps(payload))
     try:
@@ -116,12 +125,16 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
             result = _call_headroom_compress(adapter_fn, working_payload)
         else:
             result = _call_adapter(adapter_fn, working_payload, client, home)
-    except Exception:
+        adapter_result_type = type(result).__name__
+    except Exception as exc:
         return TransformResult(
             payload=payload,
             applied=False,
             adapter=adapter_name,
             skipped_reason=SKIPPED_ADAPTER_ERROR,
+            adapter_input_shape=adapter_input_shape,
+            adapter_result_type="exception",
+            error_type=type(exc).__name__,
         )
 
     if result is None:
@@ -136,6 +149,9 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
             applied=False,
             adapter=adapter_name,
             skipped_reason=SKIPPED_ADAPTER_ERROR,
+            adapter_input_shape=adapter_input_shape,
+            adapter_result_type=type(result).__name__,
+            error_type="invalid_result",
         )
 
     if transformed == original_payload:
@@ -144,8 +160,116 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
             applied=False,
             adapter=adapter_name,
             skipped_reason=SKIPPED_NO_CHANGE,
+            adapter_input_shape=adapter_input_shape,
+            adapter_result_type=adapter_result_type,
         )
-    return TransformResult(payload=transformed, applied=True, adapter=adapter_name)
+    return TransformResult(
+        payload=transformed,
+        applied=True,
+        adapter=adapter_name,
+        adapter_input_shape=adapter_input_shape,
+        adapter_result_type=adapter_result_type,
+    )
+
+
+def diagnostic(
+    sample: str = "repeated",
+    client: str = "cline",
+    model: str = config.ACTIVE_MODEL_ALIAS,
+    home: Path | None = None,
+    force_enabled: bool = False,
+) -> dict[str, Any]:
+    home = home or paths.costguard_home()
+    payload = sample_payload(sample, client, model, home)
+    before_text = json.dumps(payload)
+    before_chars = len(before_text)
+    before_tokens = _estimate_tokens(before_chars)
+    result = transform_payload(payload, client, home, force_enabled=force_enabled)
+    after_text = json.dumps(result.payload)
+    after_chars = len(after_text)
+    after_tokens = _estimate_tokens(after_chars)
+    tokens_saved = max(0, before_tokens - after_tokens)
+    adapter = _adapter_callable()
+    status_data = status(home)
+    return {
+        "sample": sample,
+        "client": client,
+        "model_alias": model,
+        "upstream_model": str(payload.get("model", "")),
+        "available": status_data["available"],
+        "compatible": status_data["compatible"],
+        "enabled": status_data["enabled"],
+        "force_enabled": force_enabled,
+        "adapter": result.adapter or (adapter[0] if adapter else ""),
+        "input_type": "openai_chat_payload",
+        "adapter_input_shape": result.adapter_input_shape or (_adapter_input_shape(adapter[0]) if adapter else "n/a"),
+        "adapter_result_type": result.adapter_result_type or "n/a",
+        "input_message_count": _message_count(payload),
+        "input_chars_before": before_chars,
+        "input_chars_after": after_chars,
+        "input_tokens_before": before_tokens,
+        "input_tokens_after": after_tokens,
+        "tokens_saved": tokens_saved,
+        "reduction_ratio": tokens_saved / before_tokens if before_tokens else 0.0,
+        "changed": result.applied,
+        "skip_reason": result.skipped_reason or "n/a",
+        "error_type": result.error_type or "n/a",
+        "content_printed": False,
+    }
+
+
+def sample_payload(
+    sample: str,
+    client: str = "cline",
+    model: str = config.ACTIVE_MODEL_ALIAS,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    home = home or paths.costguard_home()
+    if sample not in {"short", "repeated", "long-context"}:
+        raise ValueError("Sample must be one of: short, repeated, long-context.")
+    if client not in HEADROOM_CLIENTS:
+        raise ValueError("Client must be one of: cline, claude-code.")
+
+    if sample == "short":
+        text = "Summarize this short safe sample in one sentence."
+    elif sample == "repeated":
+        text = (
+            "Cost Guard validates budgets, rules, pricing, cache, model routing, and safety. "
+            * 220
+        )
+    else:
+        text = "\n".join(
+            f"Section {index}: Cost Guard local context, budget metadata, cache state, and routing notes."
+            for index in range(1, 260)
+        )
+
+    env = config.load_env(home)
+    alias = config.resolve_model_alias(model, home)
+    upstream_model = config.model_for_client(alias, "cline" if client == "cline" else "claude-code", env, home)
+    return {
+        "model": upstream_model,
+        "messages": [
+            {
+                "role": "user",
+                "content": text,
+            }
+        ],
+        "temperature": 0,
+        "max_tokens": 64,
+    }
+
+
+def _adapter_input_shape(adapter_name: str) -> str:
+    return "messages_list" if adapter_name == "compress" else "payload_dict"
+
+
+def _message_count(payload: dict[str, Any]) -> int:
+    messages = payload.get("messages")
+    return len(messages) if isinstance(messages, list) else 0
+
+
+def _estimate_tokens(chars: int) -> int:
+    return max(1, int((chars + 3) / 4))
 
 
 def _skip_reason(payload: dict[str, Any], client: str) -> str | None:

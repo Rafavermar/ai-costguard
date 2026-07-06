@@ -297,6 +297,15 @@ headroom_last_skip_reason
 
 Common reasons are `skipped_streaming`, `skipped_tools`, `skipped_no_messages`, `skipped_adapter_error`, and `skipped_no_change`.
 
+Before spending more LLM quota, run:
+
+```powershell
+costguard headroom test --sample repeated
+costguard headroom test --sample long-context
+```
+
+If the offline test also returns `changed=False` and `skip_reason=skipped_no_change`, the adapter was called but did not compress that sample. Treat Headroom as installed but not compression-validated for that workstation.
+
 Raw local logs are under:
 
 ```text

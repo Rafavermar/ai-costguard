@@ -329,6 +329,24 @@ def headroom_disable() -> None:
     _print_headroom(headroom_mod.disable())
 
 
+@headroom_app.command("test")
+def headroom_test(
+    sample: str = typer.Option("repeated", "--sample", help="short, repeated, or long-context."),
+    client: str = typer.Option("cline", "--client", help="cline or claude-code."),
+    model: str = typer.Option("cg-active", "--model", help="Cost Guard model alias to resolve for the sample."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Diagnostic only: run the adapter even if Headroom is disabled in local config.",
+    ),
+) -> None:
+    try:
+        _print_headroom(headroom_mod.diagnostic(sample=sample, client=client, model=model, force_enabled=force))
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
 def _print_headroom(data: dict[str, object]) -> None:
     table = Table("Metric", "Value")
     for key, value in data.items():

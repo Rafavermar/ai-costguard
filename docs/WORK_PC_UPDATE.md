@@ -218,12 +218,14 @@ uv tool install --editable "." --link-mode=copy --force
 End-to-end evidence after a safe Cline request:
 
 ```powershell
+costguard headroom test --sample repeated
 costguard usage today
 ```
 
 Expected evidence:
 
 ```text
+changed=True in offline headroom test, or:
 headroom_applied_count > 0
 headroom_tokens_saved > 0
 headroom_reduction_ratio > 0
