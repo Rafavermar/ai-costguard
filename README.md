@@ -54,7 +54,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Local audit trail | SQLite stores metadata by default, not prompt/response content. |
 | Optional Headroom compression | When a compatible Headroom adapter is installed and enabled, the proxy transforms request payloads before budget checks and upstream forwarding. |
 
-Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, skip count/reason, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content. `costguard headroom test --sample repeated` validates the adapter offline without calling an upstream model. `headroom status` proves installation/configuration; real compression is proven only when `changed=True` in offline test or `headroom_applied_count > 0` in real traffic.
+Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, skip count/reason, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content. `costguard headroom test --sample repeated` validates the adapter offline without calling an upstream model, and `--input-shape messages-list|raw-text|openai-payload|concatenated-messages-text` helps diagnose adapter contract issues. `headroom status` proves installation/configuration; real compression is proven only when `changed=True` and `tokens_saved > 0` offline, or `headroom_applied_count > 0` and `headroom_tokens_saved > 0` in real traffic.
 
 The improvement loop is deliberately simple: inspect usage, identify noisy patterns, tune YAML rules/budgets/model aliases, refresh pricing when available, and rerun. It is an operating guardrail, not an autonomous optimization system.
 
@@ -97,7 +97,7 @@ These pieces are available but disabled or opt-in by default:
 | Component | Default | Purpose |
 | --- | --- | --- |
 | Cache | Disabled | Basic exact-match response cache is functional but opt-in; semantic/vector mode is scaffolded for a future embeddings design. |
-| Headroom | Disabled | Optional request compression via `headroom-ai` in library mode. Cost Guard calls `headroom.compress(messages, model=...)` when installed and enabled, and records applied/skip evidence. Treat it as experimental on a workstation until real traffic shows `headroom_applied_count > 0`. |
+| Headroom | Disabled | Optional request compression via `headroom-ai` in library mode. Cost Guard calls `headroom.compress(messages, model=...)` when installed and enabled, records applied/skip evidence, and exposes offline input-shape diagnostics. Treat it as experimental on a workstation until real traffic shows positive Headroom savings. |
 | Pricing refresh | Not run | `costguard pricing refresh` reads `COSTGUARD_PRICING_URL` and caches provider model prices locally. |
 | Project attach | Not run | `costguard attach` writes project-local Claude metadata only when explicitly requested. |
 | Purge uninstall | Not run | `costguard uninstall --purge --yes` deletes `COSTGUARD_HOME`; plain uninstall keeps it. |
@@ -240,6 +240,7 @@ costguard usage today
 costguard cache status
 costguard headroom status
 costguard headroom test --sample repeated
+costguard headroom test --sample repeated --input-shape raw-text --force
 costguard uninstall
 ```
 

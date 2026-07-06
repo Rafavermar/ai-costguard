@@ -446,7 +446,18 @@ costguard headroom test --sample repeated
 costguard headroom test --sample long-context
 ```
 
-The command prints only metadata: adapter, input shape, message count, before/after chars, estimated tokens, `changed`, `skip_reason`, and result type. It does not print sample content or call the upstream model.
+The command prints only metadata: adapter, requested input shape, adapter result type/keys, normalized result shape, payload reconstruction status, message count, before/after chars, estimated tokens, `changed`, and `skip_reason`. It does not print sample content or call the upstream model.
+
+If the adapter is invoked but does not reduce anything, test the input contract explicitly:
+
+```powershell
+costguard headroom test --sample repeated --input-shape messages-list --force
+costguard headroom test --sample repeated --input-shape raw-text --force
+costguard headroom test --sample repeated --input-shape openai-payload --force
+costguard headroom test --sample repeated --input-shape concatenated-messages-text --force
+```
+
+Production traffic uses the official library-style path `compress(messages, model=...)`. The other shapes are diagnostics to identify whether an adapter expects text, a messages list, or a full OpenAI-compatible payload.
 
 If Headroom is installed but disabled and you only want an offline adapter check:
 
@@ -454,7 +465,7 @@ If Headroom is installed but disabled and you only want an offline adapter check
 costguard headroom test --sample repeated --force
 ```
 
-Offline evidence is `changed=True`, positive `tokens_saved`, and positive `reduction_ratio`. Real traffic evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Small prompts may apply Headroom without saving much.
+Offline evidence is `changed=True`, positive `tokens_saved`, and positive `reduction_ratio`. Real traffic evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Do not claim Headroom savings from `enabled=True`, `active=True`, or `skipped_no_change`.
 
 If `headroom_applied_count` remains `0`, inspect:
 

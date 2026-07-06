@@ -304,7 +304,16 @@ costguard headroom test --sample repeated
 costguard headroom test --sample long-context
 ```
 
-If the offline test also returns `changed=False` and `skip_reason=skipped_no_change`, the adapter was called but did not compress that sample. Treat Headroom as installed but not compression-validated for that workstation.
+If the offline test also returns `changed=False` and `skip_reason=skipped_no_change`, the adapter was called but did not compress that sample. Check the adapter contract without calling an upstream model:
+
+```powershell
+costguard headroom test --sample repeated --input-shape messages-list --force
+costguard headroom test --sample repeated --input-shape raw-text --force
+costguard headroom test --sample repeated --input-shape openai-payload --force
+costguard headroom test --sample repeated --input-shape concatenated-messages-text --force
+```
+
+Read `adapter_result_keys`, `normalized_result_shape`, and `payload_reconstruction_status`. Treat Headroom as installed but not compression-validated until `tokens_saved > 0` offline or `headroom_tokens_saved > 0` in real traffic.
 
 Raw local logs are under:
 

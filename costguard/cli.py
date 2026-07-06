@@ -334,6 +334,11 @@ def headroom_test(
     sample: str = typer.Option("repeated", "--sample", help="short, repeated, or long-context."),
     client: str = typer.Option("cline", "--client", help="cline or claude-code."),
     model: str = typer.Option("cg-active", "--model", help="Cost Guard model alias to resolve for the sample."),
+    input_shape: str = typer.Option(
+        "messages-list",
+        "--input-shape",
+        help="Diagnostic adapter input: messages-list, raw-text, openai-payload, or concatenated-messages-text.",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -341,7 +346,15 @@ def headroom_test(
     ),
 ) -> None:
     try:
-        _print_headroom(headroom_mod.diagnostic(sample=sample, client=client, model=model, force_enabled=force))
+        _print_headroom(
+            headroom_mod.diagnostic(
+                sample=sample,
+                client=client,
+                model=model,
+                force_enabled=force,
+                input_shape=input_shape,
+            )
+        )
     except ValueError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc

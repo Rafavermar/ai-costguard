@@ -71,6 +71,42 @@ def _install_no_change_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> typ
     return module
 
 
+def _install_shape_aware_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    module = types.ModuleType("headroom")
+
+    def compress(value: Any, model: str) -> Any:
+        module.calls.append({"value": value, "model": model})  # type: ignore[attr-defined]
+        if isinstance(value, dict):
+            payload = json.loads(json.dumps(value))
+            payload["messages"][0]["content"] = "short context"
+            return {"payload": payload, "tokens_saved": 80}
+        if isinstance(value, list):
+            messages = json.loads(json.dumps(value))
+            messages[0]["content"] = "short context"
+            return {"compressed_messages": messages, "tokens_saved": 80}
+        if isinstance(value, str):
+            return {"compressed_text": "short context", "tokens_saved": 80}
+        return {"tokens_saved": 0}
+
+    module.calls = []  # type: ignore[attr-defined]
+    module.compress = compress  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "headroom", module)
+    return module
+
+
+def _install_metadata_only_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    module = types.ModuleType("headroom")
+
+    def compress(value: Any, model: str) -> dict[str, Any]:
+        module.calls.append({"value": value, "model": model})  # type: ignore[attr-defined]
+        return {"changed": False, "tokens_saved": 0}
+
+    module.calls = []  # type: ignore[attr-defined]
+    module.compress = compress  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "headroom", module)
+    return module
+
+
 def test_headroom_enable_and_transform_payload(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
     _install_fake_headroom(monkeypatch)
@@ -306,6 +342,95 @@ def test_headroom_diagnostic_reports_metrics_without_content(isolated_env, monke
     assert "Cost Guard validates" not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    ("input_shape", "expected_input_type", "expected_result_keys", "expected_normalized_shape", "expected_status"),
+    [
+        ("messages-list", list, "compressed_messages,tokens_saved", "dict_compressed_messages", "messages_reconstructed"),
+        ("openai-payload", dict, "payload,tokens_saved", "dict_payload_messages", "payload_reconstructed"),
+        ("raw-text", str, "compressed_text,tokens_saved", "dict_compressed_text", "text_reconstructed"),
+        (
+            "concatenated-messages-text",
+            str,
+            "compressed_text,tokens_saved",
+            "dict_compressed_text",
+            "text_reconstructed",
+        ),
+    ],
+)
+def test_headroom_diagnostic_input_shapes_reconstruct_payload(
+    isolated_env,
+    monkeypatch,
+    input_shape,
+    expected_input_type,
+    expected_result_keys,
+    expected_normalized_shape,
+    expected_status,
+):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    fake_headroom = _install_shape_aware_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+        input_shape=input_shape,
+    )
+
+    assert result["changed"] is True
+    assert result["requested_input_shape"] == input_shape
+    assert result["adapter_input_shape"] == input_shape.replace("-", "_")
+    assert result["adapter_result_type"] == "dict"
+    assert result["adapter_result_keys"] == expected_result_keys
+    assert result["normalized_result_shape"] == expected_normalized_shape
+    assert result["payload_reconstruction_status"] == expected_status
+    assert result["input_chars_before"] > result["input_chars_after"]
+    assert result["tokens_saved"] > 0
+    assert isinstance(fake_headroom.calls[-1]["value"], expected_input_type)  # type: ignore[attr-defined]
+    assert fake_headroom.calls[-1]["model"] == "real-model"  # type: ignore[attr-defined]
+    assert "Cost Guard validates" not in json.dumps(result)
+
+
+def test_headroom_diagnostic_accepts_underscore_input_shape_alias(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_shape_aware_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+        input_shape="raw_text",
+    )
+
+    assert result["requested_input_shape"] == "raw-text"
+    assert result["adapter_input_shape"] == "raw_text"
+    assert result["changed"] is True
+
+
+def test_headroom_diagnostic_reports_metadata_only_dict(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_metadata_only_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+    )
+
+    assert result["changed"] is False
+    assert result["skip_reason"] == "skipped_no_change"
+    assert result["adapter_result_keys"] == "changed,tokens_saved"
+    assert result["normalized_result_shape"] == "dict_metadata_only"
+    assert result["payload_reconstruction_status"] == "metadata_only"
+    assert result["tokens_saved"] == 0
+    assert "Cost Guard validates" not in json.dumps(result)
+
+
 def test_headroom_diagnostic_reports_no_change(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
     fake_headroom = _install_no_change_headroom_compress(monkeypatch)
@@ -328,13 +453,26 @@ def test_headroom_diagnostic_reports_no_change(isolated_env, monkeypatch):
 
 def test_cli_headroom_test_does_not_print_sample_content(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
-    _install_fake_headroom_compress(monkeypatch)
+    _install_shape_aware_headroom_compress(monkeypatch)
     headroom.enable(isolated_env["home"])
     runner = CliRunner()
 
-    result = runner.invoke(app, ["headroom", "test", "--sample", "repeated", "--model", "cg-standard"])
+    result = runner.invoke(
+        app,
+        [
+            "headroom",
+            "test",
+            "--sample",
+            "repeated",
+            "--model",
+            "cg-standard",
+            "--input-shape",
+            "raw-text",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "changed" in result.output
     assert "True" in result.output
+    assert "raw-text" in result.output
     assert "Cost Guard validates" not in result.output

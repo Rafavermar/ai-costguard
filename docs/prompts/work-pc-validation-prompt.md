@@ -309,6 +309,17 @@ costguard headroom test --sample long-context
 
 `headroom test` is offline and does not call the upstream model. It prints metadata only and does not print sample content.
 
+If the adapter runs but returns `skipped_no_change`, compare input shapes offline before spending more quota:
+
+```powershell
+costguard headroom test --sample repeated --input-shape messages-list --force
+costguard headroom test --sample repeated --input-shape raw-text --force
+costguard headroom test --sample repeated --input-shape openai-payload --force
+costguard headroom test --sample repeated --input-shape concatenated-messages-text --force
+```
+
+Read `adapter_result_keys`, `normalized_result_shape`, and `payload_reconstruction_status`.
+
 End-to-end Headroom evidence requires real Cline/CostGuard traffic and consumes quota:
 
 ```powershell

@@ -222,16 +222,25 @@ costguard headroom test --sample repeated
 costguard usage today
 ```
 
+If `skipped_no_change` appears, diagnose the adapter input contract offline before spending more quota:
+
+```powershell
+costguard headroom test --sample repeated --input-shape messages-list --force
+costguard headroom test --sample repeated --input-shape raw-text --force
+costguard headroom test --sample repeated --input-shape openai-payload --force
+costguard headroom test --sample repeated --input-shape concatenated-messages-text --force
+```
+
 Expected evidence:
 
 ```text
-changed=True in offline headroom test, or:
+changed=True and tokens_saved > 0 in offline headroom test, or:
 headroom_applied_count > 0
 headroom_tokens_saved > 0
 headroom_reduction_ratio > 0
 ```
 
-`outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response. `headroom status` with `enabled=True` and `active=True` only proves the adapter is installed/configured.
+`outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response. `headroom status` with `enabled=True` and `active=True` only proves the adapter is installed/configured. The input-shape diagnostics print metadata such as adapter result keys and payload reconstruction status, not prompt content.
 
 If `headroom_applied_count` stays `0`, inspect:
 
