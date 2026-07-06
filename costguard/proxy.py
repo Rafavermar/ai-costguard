@@ -222,6 +222,28 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                     headroom_tokens_saved / headroom_input_tokens_before if headroom_input_tokens_before else 0.0
                 ),
             }
+        elif headroom_result.skipped_reason:
+            headroom_tokens_saved = max(0, headroom_input_tokens_before - headroom_input_tokens_after)
+            headroom_metrics = {
+                "headroom_skipped": True,
+                "headroom_skip_reason": headroom_result.skipped_reason,
+            }
+            if headroom_result.skipped_reason != headroom.SKIPPED_DISABLED:
+                headroom_metrics.update(
+                    {
+                        "headroom_adapter": headroom_result.adapter,
+                        "headroom_input_chars_before": headroom_input_chars_before,
+                        "headroom_input_chars_after": headroom_input_chars_after,
+                        "headroom_input_tokens_before": headroom_input_tokens_before,
+                        "headroom_input_tokens_after": headroom_input_tokens_after,
+                        "headroom_tokens_saved": headroom_tokens_saved,
+                        "headroom_reduction_ratio": (
+                            headroom_tokens_saved / headroom_input_tokens_before
+                            if headroom_input_tokens_before
+                            else 0.0
+                        ),
+                    }
+                )
 
         input_chars = len(body_text)
         estimated_tokens = budget.estimate_tokens(input_chars)

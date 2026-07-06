@@ -316,6 +316,15 @@ Evidence:
 - `headroom_tokens_saved > 0` when the prompt/context is long enough
 - `headroom_reduction_ratio > 0` when compression is effective
 
+If `headroom_applied_count` stays `0`, inspect:
+
+```text
+headroom_skipped_count
+headroom_last_skip_reason
+```
+
+`enabled=True` and `active=True` only prove that Headroom is installed/configured. Until a real request shows `headroom_applied_count > 0`, treat Headroom as experimental for that workstation/upstream path.
+
 `outputs_reduced` is output truncation, not Headroom evidence.
 
 ## Phase 11 - Optional Claude Code Validation

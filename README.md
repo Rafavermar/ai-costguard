@@ -54,7 +54,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Local audit trail | SQLite stores metadata by default, not prompt/response content. |
 | Optional Headroom compression | When a compatible Headroom adapter is installed and enabled, the proxy transforms request payloads before budget checks and upstream forwarding. |
 
-Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content.
+Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, skip count/reason, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content. `headroom status` proves installation/configuration; real compression is proven only when `headroom_applied_count > 0`.
 
 The improvement loop is deliberately simple: inspect usage, identify noisy patterns, tune YAML rules/budgets/model aliases, refresh pricing when available, and rerun. It is an operating guardrail, not an autonomous optimization system.
 
@@ -97,7 +97,7 @@ These pieces are available but disabled or opt-in by default:
 | Component | Default | Purpose |
 | --- | --- | --- |
 | Cache | Disabled | Basic exact-match response cache is functional but opt-in; semantic/vector mode is scaffolded for a future embeddings design. |
-| Headroom | Disabled | Optional request compression via `headroom-ai` in library mode. Cost Guard calls `headroom.compress(messages, model=...)` when installed and enabled. |
+| Headroom | Disabled | Optional request compression via `headroom-ai` in library mode. Cost Guard calls `headroom.compress(messages, model=...)` when installed and enabled, and records applied/skip evidence. Treat it as experimental on a workstation until real traffic shows `headroom_applied_count > 0`. |
 | Pricing refresh | Not run | `costguard pricing refresh` reads `COSTGUARD_PRICING_URL` and caches provider model prices locally. |
 | Project attach | Not run | `costguard attach` writes project-local Claude metadata only when explicitly requested. |
 | Purge uninstall | Not run | `costguard uninstall --purge --yes` deletes `COSTGUARD_HOME`; plain uninstall keeps it. |

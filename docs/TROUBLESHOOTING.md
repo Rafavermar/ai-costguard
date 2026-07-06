@@ -288,6 +288,15 @@ costguard usage month
 
 `outputs_reduced` means output limits truncated a large upstream response. For Headroom evidence, check `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`.
 
+If `headroom status` shows `enabled=True` and `active=True` but `headroom_applied_count=0`, Headroom is installed/configured but did not transform that request. Check:
+
+```text
+headroom_skipped_count
+headroom_last_skip_reason
+```
+
+Common reasons are `skipped_streaming`, `skipped_tools`, `skipped_no_messages`, `skipped_adapter_error`, and `skipped_no_change`.
+
 Raw local logs are under:
 
 ```text

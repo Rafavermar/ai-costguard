@@ -41,10 +41,12 @@ def _install_fake_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.Mo
 
     def compress(messages: list[dict[str, Any]], model: str) -> CompressResult:
         assert model == "real-model"
+        module.calls.append({"messages": messages, "model": model})  # type: ignore[attr-defined]
         compressed = [dict(message) for message in messages]
         compressed[0]["content"] = "short context"
         return CompressResult(compressed)
 
+    module.calls = []  # type: ignore[attr-defined]
     module.compress = compress  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "headroom", module)
     return module
@@ -158,3 +160,105 @@ def test_proxy_applies_headroom_before_forwarding(isolated_env, monkeypatch):
     assert summary["headroom_reduction_ratio"] > 0
     assert summary["outputs_reduced"] == 0
     assert marker.encode("utf-8") not in (isolated_env["home"] / "costguard.db").read_bytes()
+
+
+def test_proxy_invokes_compress_adapter_for_openai_chat_request(isolated_env, monkeypatch):
+    setup_costguard(
+        tool="cline",
+        non_interactive=True,
+        openai_upstream_base_url="http://upstream.example/v1",
+        openai_model_cheap="real-model",
+    )
+    monkeypatch.setenv("OPENAI_UPSTREAM_API_KEY", "test-key")
+    fake_headroom = _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, json: dict[str, Any], headers: dict[str, str], timeout: int) -> httpx.Response:
+        captured["json"] = json
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(proxy.httpx, "post", fake_post)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), proxy.CostGuardHandler)
+    server.costguard_home = isolated_env["home"]  # type: ignore[attr-defined]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        long_text = "repeatable context " * 400
+        body = json.dumps({"model": "cg-cheap", "messages": [{"role": "user", "content": long_text}]})
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request(
+            "POST",
+            "/v1/chat/completions",
+            body=body,
+            headers={"authorization": "Bearer sk-costguard-local", "content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        response.read()
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert response.status == 200
+    assert fake_headroom.calls == [{"messages": [{"role": "user", "content": long_text}], "model": "real-model"}]
+    assert captured["json"]["messages"][0]["content"] == "short context"
+    summary = usage_mod.summary("today", isolated_env["home"])
+    assert summary["headroom_applied_count"] == 1
+    assert summary["headroom_skipped_count"] == 0
+    assert summary["headroom_input_chars_before"] > summary["headroom_input_chars_after"]
+    assert summary["headroom_tokens_saved"] > 0
+    assert summary["headroom_last_skip_reason"] == "n/a"
+
+
+def test_proxy_records_headroom_skip_reason_for_tools_request(isolated_env, monkeypatch):
+    setup_costguard(
+        tool="cline",
+        non_interactive=True,
+        openai_upstream_base_url="http://upstream.example/v1",
+        openai_model_standard="real-model",
+    )
+    monkeypatch.setenv("OPENAI_UPSTREAM_API_KEY", "test-key")
+    fake_headroom = _install_fake_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    def fake_post(url: str, json: dict[str, Any], headers: dict[str, str], timeout: int) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(proxy.httpx, "post", fake_post)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), proxy.CostGuardHandler)
+    server.costguard_home = isolated_env["home"]  # type: ignore[attr-defined]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps(
+            {
+                "model": "cg-standard",
+                "messages": [{"role": "user", "content": "safe context"}],
+                "tools": [{"type": "function", "function": {"name": "do_work"}}],
+            }
+        )
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request(
+            "POST",
+            "/v1/chat/completions",
+            body=body,
+            headers={"authorization": "Bearer sk-costguard-local", "content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        response.read()
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert response.status == 200
+    assert fake_headroom.calls == []
+    summary = usage_mod.summary("today", isolated_env["home"])
+    assert summary["headroom_applied_count"] == 0
+    assert summary["headroom_skipped_count"] == 1
+    assert summary["headroom_last_skip_reason"] == "skipped_tools"
+    assert summary["headroom_input_chars_before"] > 0

@@ -9,9 +9,20 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config, paths
+from .utils import parse_bool
 
 
 ADAPTER_FUNCTIONS = ("compress", "compress_payload", "compress_request", "transform_payload", "apply")
+HEADROOM_CLIENTS = {"cline", "claude-code"}
+TOOL_KEYS = {"tools", "tool_choice", "functions", "function_call"}
+
+SKIPPED_DISABLED = "skipped_disabled"
+SKIPPED_NOT_ELIGIBLE = "skipped_not_eligible"
+SKIPPED_STREAMING = "skipped_streaming"
+SKIPPED_TOOLS = "skipped_tools"
+SKIPPED_NO_MESSAGES = "skipped_no_messages"
+SKIPPED_ADAPTER_ERROR = "skipped_adapter_error"
+SKIPPED_NO_CHANGE = "skipped_no_change"
 
 
 @dataclass(frozen=True)
@@ -19,6 +30,7 @@ class TransformResult:
     payload: dict[str, Any]
     applied: bool
     adapter: str | None = None
+    skipped_reason: str | None = None
 
 
 def available() -> bool:
@@ -86,20 +98,31 @@ def disable(home: Path | None = None, dry_run: bool = False) -> dict[str, Any]:
 def transform_payload(payload: dict[str, Any], client: str, home: Path | None = None) -> TransformResult:
     home = home or paths.costguard_home()
     if not config.headroom_enabled(home):
-        return TransformResult(payload=payload, applied=False)
+        return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_DISABLED)
+
+    skip_reason = _skip_reason(payload, client)
+    if skip_reason is not None:
+        return TransformResult(payload=payload, applied=False, skipped_reason=skip_reason)
 
     adapter = _adapter_callable()
     if adapter is None:
-        functions = ", ".join(ADAPTER_FUNCTIONS)
-        raise RuntimeError(f"Headroom is enabled but no compatible adapter was found. Expected one function: {functions}.")
+        return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_ADAPTER_ERROR)
 
     adapter_name, adapter_fn = adapter
     original_payload = json.loads(json.dumps(payload))
     working_payload = json.loads(json.dumps(payload))
-    if adapter_name == "compress":
-        result = _call_headroom_compress(adapter_fn, working_payload)
-    else:
-        result = _call_adapter(adapter_fn, working_payload, client, home)
+    try:
+        if adapter_name == "compress":
+            result = _call_headroom_compress(adapter_fn, working_payload)
+        else:
+            result = _call_adapter(adapter_fn, working_payload, client, home)
+    except Exception:
+        return TransformResult(
+            payload=payload,
+            applied=False,
+            adapter=adapter_name,
+            skipped_reason=SKIPPED_ADAPTER_ERROR,
+        )
 
     if result is None:
         transformed = working_payload
@@ -108,9 +131,42 @@ def transform_payload(payload: dict[str, Any], client: str, home: Path | None = 
     elif isinstance(result, dict):
         transformed = result
     else:
-        raise RuntimeError(f"Headroom adapter {adapter_name} must return a request payload dict or mutate it in place.")
+        return TransformResult(
+            payload=payload,
+            applied=False,
+            adapter=adapter_name,
+            skipped_reason=SKIPPED_ADAPTER_ERROR,
+        )
 
-    return TransformResult(payload=transformed, applied=transformed != original_payload, adapter=adapter_name)
+    if transformed == original_payload:
+        return TransformResult(
+            payload=transformed,
+            applied=False,
+            adapter=adapter_name,
+            skipped_reason=SKIPPED_NO_CHANGE,
+        )
+    return TransformResult(payload=transformed, applied=True, adapter=adapter_name)
+
+
+def _skip_reason(payload: dict[str, Any], client: str) -> str | None:
+    if client not in HEADROOM_CLIENTS:
+        return SKIPPED_NOT_ELIGIBLE
+    if parse_bool(payload.get("stream"), default=False):
+        return SKIPPED_STREAMING
+    if _has_tools(payload):
+        return SKIPPED_TOOLS
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return SKIPPED_NO_MESSAGES
+    return None
+
+
+def _has_tools(payload: dict[str, Any]) -> bool:
+    for key in TOOL_KEYS:
+        value = payload.get(key)
+        if value not in (None, False, "", [], {}):
+            return True
+    return False
 
 
 def _call_adapter(adapter_fn: Callable[..., Any], payload: dict[str, Any], client: str, home: Path) -> Any:

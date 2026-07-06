@@ -229,7 +229,28 @@ headroom_tokens_saved > 0
 headroom_reduction_ratio > 0
 ```
 
-`outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response.
+`outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response. `headroom status` with `enabled=True` and `active=True` only proves the adapter is installed/configured.
+
+If `headroom_applied_count` stays `0`, inspect:
+
+```text
+headroom_skipped_count
+headroom_last_skip_reason
+```
+
+Useful skip reasons:
+
+```text
+skipped_disabled
+skipped_not_eligible
+skipped_streaming
+skipped_tools
+skipped_no_messages
+skipped_adapter_error
+skipped_no_change
+```
+
+Until `headroom_applied_count > 0` appears on a real request, treat Headroom as experimental for that work-PC path.
 
 ## 9. Optional Basic Cache Check
 

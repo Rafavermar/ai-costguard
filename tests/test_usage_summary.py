@@ -31,14 +31,28 @@ def test_usage_summary_separates_output_limits_and_headroom_metrics(isolated_env
         },
         db,
     )
+    record_usage(
+        {
+            **base_event,
+            "headroom_skipped": True,
+            "headroom_skip_reason": "skipped_tools",
+            "headroom_input_chars_before": 200,
+            "headroom_input_chars_after": 200,
+            "headroom_input_tokens_before": 50,
+            "headroom_input_tokens_after": 50,
+        },
+        db,
+    )
 
     summary = usage_summary("today", db)
 
     assert summary["outputs_reduced"] == 1
     assert summary["headroom_applied_count"] == 1
-    assert summary["headroom_input_chars_before"] == 400
-    assert summary["headroom_input_chars_after"] == 100
-    assert summary["headroom_input_tokens_before"] == 100
-    assert summary["headroom_input_tokens_after"] == 25
+    assert summary["headroom_input_chars_before"] == 600
+    assert summary["headroom_input_chars_after"] == 300
+    assert summary["headroom_input_tokens_before"] == 150
+    assert summary["headroom_input_tokens_after"] == 75
     assert summary["headroom_tokens_saved"] == 75
-    assert summary["headroom_reduction_ratio"] == 0.75
+    assert summary["headroom_reduction_ratio"] == 0.5
+    assert summary["headroom_skipped_count"] == 1
+    assert summary["headroom_last_skip_reason"] == "skipped_tools"

@@ -178,6 +178,8 @@ headroom_input_tokens_before estimated input tokens before Headroom
 headroom_input_tokens_after  estimated input tokens after Headroom
 headroom_tokens_saved        estimated input tokens saved by Headroom
 headroom_reduction_ratio     estimated saved/input ratio, for example 0.35 means 35%
+headroom_skipped_count       requests where Headroom was enabled but not applied
+headroom_last_skip_reason    latest skip reason, such as skipped_no_change
 cache_hits                   requests served from local response cache
 cache_misses                 cacheable requests sent upstream and then stored
 cache_hit_ratio              hits divided by hits + misses
@@ -185,7 +187,7 @@ cache_tokens_saved           estimated tokens not sent upstream because of cache
 cache_cost_saved             estimated local cost avoided because of cache hits
 ```
 
-Do not use `outputs_reduced` as cache or Headroom evidence. It belongs to output limits, not request compression or cache hits.
+Do not use `outputs_reduced` as cache or Headroom evidence. It belongs to output limits, not request compression or cache hits. `enabled=True` and `active=True` in `headroom status` mean the adapter is installed and configured; real request compression is only proven when `headroom_applied_count > 0`.
 
 ## Model Routing With Cline And Claude Code
 
@@ -436,6 +438,27 @@ costguard usage today
 ```
 
 Evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Small prompts may apply Headroom without saving much.
+
+If `headroom_applied_count` remains `0`, inspect:
+
+```text
+headroom_skipped_count
+headroom_last_skip_reason
+```
+
+Known skip reasons:
+
+```text
+skipped_disabled      Headroom is disabled in local config
+skipped_not_eligible  request/client shape is not eligible
+skipped_streaming     streaming request skipped for safe passthrough
+skipped_tools         tools/functions request skipped to avoid tool-call changes
+skipped_no_messages   payload has no messages list
+skipped_adapter_error adapter failed or returned an invalid shape
+skipped_no_change     adapter ran but returned the same payload
+```
+
+Until a real request shows `headroom_applied_count > 0`, treat Headroom as installed/configured but still experimental for that workstation/upstream path.
 
 ## Attach
 
