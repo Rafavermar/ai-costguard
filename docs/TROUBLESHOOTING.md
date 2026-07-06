@@ -247,6 +247,8 @@ costguard usage today
 costguard usage month
 ```
 
+`outputs_reduced` means output limits truncated a large upstream response. For Headroom evidence, check `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`.
+
 Raw local logs are under:
 
 ```text

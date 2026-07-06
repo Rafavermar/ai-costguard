@@ -182,6 +182,11 @@ Prueba adicional obligatoria para validar Cline:
 - Comprueba que responde `OK`.
 - Despues comprueba `costguard usage today`.
 - Si funciona en task nueva pero no en task anterior, documenta que la causa probable era contexto acumulado de Cline bloqueado por el secret filter corporativo.
+- Si Headroom esta habilitado, valida evidencia en `costguard usage today`:
+  - `headroom_applied_count > 0`
+  - `headroom_tokens_saved > 0` si el prompt/contexto era suficientemente largo
+  - `headroom_reduction_ratio > 0` si hubo compresion efectiva
+  - `outputs_reduced` NO es evidencia de Headroom; es recorte de salida por output limits.
 
 ## FASE 5 - Setup real SOLO para Cline
 

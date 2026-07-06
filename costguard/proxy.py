@@ -120,15 +120,34 @@ class CostGuardHandler(BaseHTTPRequestHandler):
         model_alias = config.resolve_model_alias(str(requested_model) if requested_model else None, self.home)
         payload["model"] = config.model_for_client(model_alias, "cline" if client == "cline" else "claude-code", env, self.home)
         headroom_rule = None
+        headroom_metrics: dict[str, Any] = {}
+        headroom_input_before = json.dumps(payload)
+        headroom_input_chars_before = len(headroom_input_before)
+        headroom_input_tokens_before = budget.estimate_tokens(headroom_input_chars_before)
         try:
             headroom_result = headroom.transform_payload(payload, client, self.home)
         except RuntimeError as exc:
             _json_response(self, 500, {"error": str(exc)})
             return
         payload = headroom_result.payload
+        body_text = json.dumps(payload)
+        headroom_input_chars_after = len(body_text)
+        headroom_input_tokens_after = budget.estimate_tokens(headroom_input_chars_after)
         if headroom_result.applied:
             headroom_rule = f"headroom:{headroom_result.adapter}"
-        body_text = json.dumps(payload)
+            headroom_tokens_saved = max(0, headroom_input_tokens_before - headroom_input_tokens_after)
+            headroom_metrics = {
+                "headroom_applied": True,
+                "headroom_adapter": headroom_result.adapter,
+                "headroom_input_chars_before": headroom_input_chars_before,
+                "headroom_input_chars_after": headroom_input_chars_after,
+                "headroom_input_tokens_before": headroom_input_tokens_before,
+                "headroom_input_tokens_after": headroom_input_tokens_after,
+                "headroom_tokens_saved": headroom_tokens_saved,
+                "headroom_reduction_ratio": (
+                    headroom_tokens_saved / headroom_input_tokens_before if headroom_input_tokens_before else 0.0
+                ),
+            }
 
         input_chars = len(body_text)
         estimated_tokens = budget.estimate_tokens(input_chars)
@@ -148,6 +167,7 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                     "budget_action": decision.action,
                     "active_budget": decision.mode,
                     "security_event": security_event,
+                    **headroom_metrics,
                 },
                 paths.db_path(self.home),
             )
@@ -181,6 +201,7 @@ class CostGuardHandler(BaseHTTPRequestHandler):
         response_text = response.text
         output_chars = len(response_text)
         final_body = response.content
+        output_reduced = False
         if env.get("COSTGUARD_ENABLE_OUTPUT_LIMITS", "true").lower() == "true":
             max_chars = int(env.get("COSTGUARD_MAX_OUTPUT_CHARS", "20000") or 20000)
             max_lines = int(env.get("COSTGUARD_MAX_OUTPUT_LINES", "500") or 500)
@@ -189,10 +210,12 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                 limited_payload, changed = _limit_json_payload(response_payload, max_chars, max_lines)
                 if changed:
                     final_body = json.dumps(limited_payload).encode("utf-8")
+                    output_reduced = True
             except ValueError:
                 limited_text, changed = _limit_text(response_text, max_chars, max_lines)
                 if changed:
                     final_body = limited_text.encode("utf-8")
+                    output_reduced = True
 
         record_usage(
             {
@@ -212,6 +235,8 @@ class CostGuardHandler(BaseHTTPRequestHandler):
                 "budget_action": decision.action,
                 "active_budget": decision.mode,
                 "security_event": security_event,
+                "output_reduced": output_reduced,
+                **headroom_metrics,
             },
             paths.db_path(self.home),
         )

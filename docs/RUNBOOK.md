@@ -103,6 +103,25 @@ costguard usage today
 costguard budget status
 ```
 
+## Usage Metrics
+
+`costguard usage today` is metadata-only by default. It does not store prompts or responses.
+
+Important fields:
+
+```text
+outputs_reduced              output limits truncated an oversized upstream response
+headroom_applied_count       requests where Headroom transformed the input payload
+headroom_input_chars_before  input payload size before Headroom
+headroom_input_chars_after   input payload size after Headroom
+headroom_input_tokens_before estimated input tokens before Headroom
+headroom_input_tokens_after  estimated input tokens after Headroom
+headroom_tokens_saved        estimated input tokens saved by Headroom
+headroom_reduction_ratio     estimated saved/input ratio, for example 0.35 means 35%
+```
+
+Do not use `outputs_reduced` as Headroom evidence. It belongs to output limits, not request compression.
+
 ## Model Routing With Cline
 
 Cline sends the Model ID configured in its UI on every request. If Cline is set to `cg-standard`, it keeps asking for `cg-standard` even if Cost Guard active model is `cg-cheap`.
@@ -261,6 +280,17 @@ compatible=True  Cost Guard found a supported adapter function
 enabled=False    expected when COSTGUARD_HEADROOM_ENABLED=false
 active=False     expected when disabled or when no request is being transformed
 ```
+
+To validate Headroom end-to-end:
+
+```powershell
+costguard headroom status
+costguard start
+# Send a safe, non-secret, sufficiently long prompt from a new Cline task.
+costguard usage today
+```
+
+Evidence is `headroom_applied_count > 0`; compression evidence is `headroom_tokens_saved > 0` or a positive `headroom_reduction_ratio`. Small prompts may apply Headroom without saving much.
 
 ## Attach
 

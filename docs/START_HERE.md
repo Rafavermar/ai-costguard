@@ -141,6 +141,8 @@ Cline may resend task history, system prompt, tool metadata, selected files, and
 costguard usage today
 ```
 
+For Headroom validation, look for `headroom_applied_count`, `headroom_tokens_saved`, and `headroom_reduction_ratio`. `outputs_reduced` means output truncation, not Headroom compression.
+
 ## Common Errors
 
 | Symptom | First action |

@@ -213,6 +213,22 @@ uv tool install --editable "." --link-mode=copy --force
 
 `enabled=False` is expected when `COSTGUARD_HEADROOM_ENABLED=false`. A real end-to-end Headroom compression test requires Cline/CostGuard traffic and consumes LLM quota, so run it only when quota is available.
 
+End-to-end evidence after a safe Cline request:
+
+```powershell
+costguard usage today
+```
+
+Expected evidence:
+
+```text
+headroom_applied_count > 0
+headroom_tokens_saved > 0
+headroom_reduction_ratio > 0
+```
+
+`outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response.
+
 ## 9. Optional Isolated Setup Smoke
 
 Use repo-local temp paths to avoid touching real home config.

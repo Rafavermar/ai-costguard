@@ -72,7 +72,7 @@ def test_pricing_status_without_configured_endpoint(isolated_env):
 
 def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
-    monkeypatch.setenv("PRICING_API_KEY", "super-secret-key")
+    monkeypatch.setenv("PRICING_API_KEY", "test-pricing-key")
     captured: dict[str, object] = {}
     payload = [
         {
@@ -103,12 +103,12 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
     assert result["written"] is True
     assert result["models"] == 2
     assert captured["url"] == "https://models.example.test/v1/models"
-    assert captured["headers"] == {"accept": "application/json", "x-api-key": "super-secret-key"}
+    assert captured["headers"] == {"accept": "application/json", "x-api-key": "test-pricing-key"}
     assert captured["timeout"] == 12
     assert paths.models_cache_path(isolated_env["home"]).exists()
     assert paths.pricing_path(isolated_env["home"]).exists()
-    assert "super-secret-key" not in paths.models_cache_path(isolated_env["home"]).read_text(encoding="utf-8")
-    assert "super-secret-key" not in paths.pricing_path(isolated_env["home"]).read_text(encoding="utf-8")
+    assert "test-pricing-key" not in paths.models_cache_path(isolated_env["home"]).read_text(encoding="utf-8")
+    assert "test-pricing-key" not in paths.pricing_path(isolated_env["home"]).read_text(encoding="utf-8")
     assert pricing.model_pricing("region.provider.model-large", isolated_env["home"])["input_per_million"] == 3.3
 
 
@@ -188,7 +188,7 @@ def test_pricing_configure_writes_local_env_without_api_key(isolated_env):
     assert "COSTGUARD_PRICING_URL=https://models.example.test/v1/models" in env_text
     assert "COSTGUARD_PRICING_API_KEY_ENV=PRICING_API_KEY" in env_text
     assert "COSTGUARD_PRICING_API_KEY=\n" in env_text
-    assert "super-secret-key" not in env_text
+    assert "test-pricing-key" not in env_text
 
 
 def test_cli_pricing_configure_does_not_print_endpoint_or_key(isolated_env):
@@ -211,13 +211,13 @@ def test_cli_pricing_configure_does_not_print_endpoint_or_key(isolated_env):
 
     assert result.exit_code == 0
     assert "https://models.example.test/v1/models" not in result.output
-    assert "super-secret-key" not in result.output
+    assert "test-pricing-key" not in result.output
     assert "configured" in result.output
 
 
 def test_cli_pricing_refresh_does_not_print_api_key(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
-    monkeypatch.setenv("PRICING_API_KEY", "super-secret-key")
+    monkeypatch.setenv("PRICING_API_KEY", "test-pricing-key")
     payload = [{"name": "model-a", "inputPrice": 1, "outputPrice": 2}]
 
     def fake_get(url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
@@ -240,5 +240,5 @@ def test_cli_pricing_refresh_does_not_print_api_key(isolated_env, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "super-secret-key" not in result.output
+    assert "test-pricing-key" not in result.output
     assert "PRICING_API_KEY" not in result.output

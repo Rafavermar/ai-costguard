@@ -23,7 +23,16 @@ CREATE TABLE IF NOT EXISTS usage_events (
     rule_applied TEXT,
     active_budget TEXT,
     budget_action TEXT NOT NULL,
-    security_event TEXT
+    security_event TEXT,
+    output_reduced INTEGER NOT NULL DEFAULT 0,
+    headroom_applied INTEGER NOT NULL DEFAULT 0,
+    headroom_adapter TEXT,
+    headroom_input_chars_before INTEGER NOT NULL DEFAULT 0,
+    headroom_input_chars_after INTEGER NOT NULL DEFAULT 0,
+    headroom_input_tokens_before INTEGER NOT NULL DEFAULT 0,
+    headroom_input_tokens_after INTEGER NOT NULL DEFAULT 0,
+    headroom_tokens_saved INTEGER NOT NULL DEFAULT 0,
+    headroom_reduction_ratio REAL NOT NULL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (
@@ -33,6 +42,18 @@ CREATE TABLE IF NOT EXISTS audit_events (
     metadata TEXT NOT NULL
 );
 """
+
+USAGE_EVENT_COLUMNS: dict[str, str] = {
+    "output_reduced": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_applied": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_adapter": "TEXT",
+    "headroom_input_chars_before": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_input_chars_after": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_input_tokens_before": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_input_tokens_after": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_tokens_saved": "INTEGER NOT NULL DEFAULT 0",
+    "headroom_reduction_ratio": "REAL NOT NULL DEFAULT 0.0",
+}
 
 
 @contextmanager
@@ -52,7 +73,15 @@ def init_db(path: Path | None = None) -> Path:
     database = path or db_path()
     with connect(database) as connection:
         connection.executescript(SCHEMA)
+        _ensure_usage_columns(connection)
     return database
+
+
+def _ensure_usage_columns(connection: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in connection.execute("PRAGMA table_info(usage_events)")}
+    for column, definition in USAGE_EVENT_COLUMNS.items():
+        if column not in existing:
+            connection.execute(f"ALTER TABLE usage_events ADD COLUMN {column} {definition}")
 
 
 def now_iso() -> str:
@@ -74,6 +103,15 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
         "active_budget": event.get("active_budget"),
         "budget_action": event.get("budget_action", "allow"),
         "security_event": event.get("security_event"),
+        "output_reduced": int(bool(event.get("output_reduced", False))),
+        "headroom_applied": int(bool(event.get("headroom_applied", False))),
+        "headroom_adapter": event.get("headroom_adapter"),
+        "headroom_input_chars_before": int(event.get("headroom_input_chars_before", 0)),
+        "headroom_input_chars_after": int(event.get("headroom_input_chars_after", 0)),
+        "headroom_input_tokens_before": int(event.get("headroom_input_tokens_before", 0)),
+        "headroom_input_tokens_after": int(event.get("headroom_input_tokens_after", 0)),
+        "headroom_tokens_saved": int(event.get("headroom_tokens_saved", 0)),
+        "headroom_reduction_ratio": float(event.get("headroom_reduction_ratio", 0.0)),
     }
     with connect(path) as connection:
         connection.execute(
@@ -81,12 +119,18 @@ def record_usage(event: dict[str, Any], path: Path | None = None) -> None:
             INSERT INTO usage_events (
                 timestamp, client, model_alias, upstream, input_chars, output_chars,
                 estimated_tokens, estimated_cost, rule_applied, active_budget,
-                budget_action, security_event
+                budget_action, security_event, output_reduced, headroom_applied,
+                headroom_adapter, headroom_input_chars_before, headroom_input_chars_after,
+                headroom_input_tokens_before, headroom_input_tokens_after,
+                headroom_tokens_saved, headroom_reduction_ratio
             )
             VALUES (
                 :timestamp, :client, :model_alias, :upstream, :input_chars, :output_chars,
                 :estimated_tokens, :estimated_cost, :rule_applied, :active_budget,
-                :budget_action, :security_event
+                :budget_action, :security_event, :output_reduced, :headroom_applied,
+                :headroom_adapter, :headroom_input_chars_before, :headroom_input_chars_after,
+                :headroom_input_tokens_before, :headroom_input_tokens_after,
+                :headroom_tokens_saved, :headroom_reduction_ratio
             )
             """,
             payload,
@@ -122,7 +166,14 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
                    COALESCE(SUM(estimated_cost), 0) AS cost,
                    COALESCE(SUM(CASE WHEN rule_applied IS NOT NULL THEN 1 ELSE 0 END), 0) AS rules,
                    COALESCE(SUM(CASE WHEN budget_action LIKE 'block%' THEN 1 ELSE 0 END), 0) AS budget_blocks,
-                   COALESCE(SUM(CASE WHEN security_event IS NOT NULL THEN 1 ELSE 0 END), 0) AS security_blocks
+                   COALESCE(SUM(CASE WHEN security_event IS NOT NULL THEN 1 ELSE 0 END), 0) AS security_blocks,
+                   COALESCE(SUM(output_reduced), 0) AS outputs_reduced,
+                   COALESCE(SUM(headroom_applied), 0) AS headroom_applied_count,
+                   COALESCE(SUM(headroom_input_chars_before), 0) AS headroom_input_chars_before,
+                   COALESCE(SUM(headroom_input_chars_after), 0) AS headroom_input_chars_after,
+                   COALESCE(SUM(headroom_input_tokens_before), 0) AS headroom_input_tokens_before,
+                   COALESCE(SUM(headroom_input_tokens_after), 0) AS headroom_input_tokens_after,
+                   COALESCE(SUM(headroom_tokens_saved), 0) AS headroom_tokens_saved
             FROM usage_events
             WHERE {clause}
             """,
@@ -139,6 +190,11 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
             """,
             (value,),
         ).fetchone()
+    headroom_tokens_before = int(row["headroom_input_tokens_before"])
+    headroom_tokens_saved = int(row["headroom_tokens_saved"])
+    headroom_reduction_ratio = (
+        headroom_tokens_saved / headroom_tokens_before if headroom_tokens_before > 0 else 0.0
+    )
     return {
         "requests": int(row["requests"]),
         "tokens": int(row["tokens"]),
@@ -147,5 +203,12 @@ def usage_summary(period: str = "today", path: Path | None = None) -> dict[str, 
         "budget_blocks": int(row["budget_blocks"]),
         "security_blocks": int(row["security_blocks"]),
         "top_model": model["model_alias"] if model else "n/a",
-        "outputs_reduced": 0,
+        "outputs_reduced": int(row["outputs_reduced"]),
+        "headroom_applied_count": int(row["headroom_applied_count"]),
+        "headroom_input_chars_before": int(row["headroom_input_chars_before"]),
+        "headroom_input_chars_after": int(row["headroom_input_chars_after"]),
+        "headroom_input_tokens_before": headroom_tokens_before,
+        "headroom_input_tokens_after": int(row["headroom_input_tokens_after"]),
+        "headroom_tokens_saved": headroom_tokens_saved,
+        "headroom_reduction_ratio": headroom_reduction_ratio,
     }

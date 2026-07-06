@@ -87,6 +87,8 @@ Cost Guard passes the request `messages` list and the already-resolved upstream 
 
 Payload-level functions may return a transformed payload dictionary or mutate the payload in place. Cost Guard passes optional `client` and `home` context when the adapter accepts it. If Headroom is enabled but no compatible adapter is available, the proxy fails with a clear local error rather than silently bypassing compression.
 
+Headroom observability is metadata-only. Usage events store before/after input sizes, estimated before/after input tokens, estimated tokens saved, and reduction ratio. They do not store prompt or response content. `outputs_reduced` belongs to output limits and is not Headroom evidence.
+
 ## Proxy MVP
 
 The proxy exposes:

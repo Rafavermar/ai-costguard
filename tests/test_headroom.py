@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
-from costguard import headroom, proxy
+from costguard import headroom, proxy, usage as usage_mod
 from costguard.install import setup_costguard
 
 
@@ -129,7 +129,8 @@ def test_proxy_applies_headroom_before_forwarding(isolated_env, monkeypatch):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        body = json.dumps({"model": "cg-standard", "messages": [{"role": "user", "content": "very long context"}]})
+        marker = "PRIVATE_CONTEXT_SHOULD_NOT_BE_STORED"
+        body = json.dumps({"model": "cg-standard", "messages": [{"role": "user", "content": marker * 20}]})
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
         connection.request(
             "POST",
@@ -149,3 +150,11 @@ def test_proxy_applies_headroom_before_forwarding(isolated_env, monkeypatch):
     assert captured["json"]["model"] == "real-model"
     assert captured["json"]["messages"][0]["content"] == "short context"
     assert captured["json"]["headroom_meta"]["client"] == "cline"
+    summary = usage_mod.summary("today", isolated_env["home"])
+    assert summary["headroom_applied_count"] == 1
+    assert summary["headroom_input_chars_before"] > summary["headroom_input_chars_after"]
+    assert summary["headroom_input_tokens_before"] >= summary["headroom_input_tokens_after"]
+    assert summary["headroom_tokens_saved"] > 0
+    assert summary["headroom_reduction_ratio"] > 0
+    assert summary["outputs_reduced"] == 0
+    assert marker.encode("utf-8") not in (isolated_env["home"] / "costguard.db").read_bytes()

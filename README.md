@@ -44,7 +44,7 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 
 | Capability | What You Get |
 | --- | --- |
-| Usage visibility | `costguard usage today/month` shows requests, estimated tokens, estimated cost, top model, rule hits, budget blocks, and security blocks. |
+| Usage visibility | `costguard usage today/month` shows requests, estimated tokens, estimated cost, top model, rule hits, budget blocks, security blocks, output truncation, and Headroom compression evidence. |
 | Budget control | Daily/monthly budget modes can warn, block premium models, or block all new calls. |
 | Real pricing support | Optional `costguard pricing refresh` can cache model prices from a company/provider catalog instead of relying on fallback estimates. |
 | Output reduction | Rules rewrite noisy commands such as full `git diff` or `find .`; output limits truncate oversized responses. |
@@ -52,6 +52,8 @@ Cost Guard helps monitor and improve usage efficiency through local controls. Th
 | Debug clarity | Docs distinguish local Cost Guard budget decisions from upstream quota errors such as HTTP 429. |
 | Local audit trail | SQLite stores metadata by default, not prompt/response content. |
 | Optional Headroom compression | When a compatible Headroom adapter is installed and enabled, the proxy transforms request payloads before budget checks and upstream forwarding. |
+
+Headroom observability is metadata-only. `usage today` can show `headroom_applied_count`, before/after input size, estimated tokens saved, and reduction ratio without storing prompt or response content.
 
 The improvement loop is deliberately simple: inspect usage, identify noisy patterns, tune YAML rules/budgets/model aliases, refresh pricing when available, and rerun. It is an operating guardrail, not an autonomous optimization system.
 
