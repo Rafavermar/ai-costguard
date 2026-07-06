@@ -103,9 +103,17 @@ costguard usage today
 costguard budget status
 ```
 
-## Model Alias
+## Model Routing With Cline
 
-Switch the local model category; real model IDs stay in local `.env`.
+Cline sends the Model ID configured in its UI on every request. If Cline is set to `cg-standard`, it keeps asking for `cg-standard` even if Cost Guard active model is `cg-cheap`.
+
+For dynamic switching, configure Cline with:
+
+```text
+Model ID: cg-active
+```
+
+Then switch the local model category; real model IDs stay in local `.env`.
 
 ```bash
 costguard use cheap
@@ -118,6 +126,22 @@ Canonical fixed aliases are `cg-cheap`, `cg-standard`, and `cg-strong`. The dyna
 If Cline is configured with `cg-standard`, it stays on standard even after `costguard use cheap`. If Cline is configured with `cg-active`, `costguard use cheap|standard|strong` changes routing without touching Cline.
 
 Future option, not enabled by default: `COSTGUARD_FORCE_ACTIVE_MODEL=true` could force all incoming requests to the active model regardless of the client-provided model ID.
+
+## Token Usage Notes
+
+Cline can consume many tokens even for a short prompt because it may resend system instructions, task history, selected workspace context, tool metadata, and previous terminal output.
+
+For clean measurements:
+
+```text
+Start New Task
+Use a minimal prompt
+Avoid Retry after secret-filter errors
+Keep `.env`, credentials, logs, and screenshots out of Cline context
+Check `costguard usage today`
+```
+
+If you see `payload blocked by secret filter`, start a new Cline task and test a minimal prompt first. Do not use Retry as the first diagnostic step.
 
 ## Budget
 
@@ -173,7 +197,7 @@ If pricing has a separate key:
 
 ```powershell
 $env:PRICING_API_KEY = "<REDACTED>"
-costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+costguard pricing configure --endpoint <pricing-catalog-url> --api-key-env PRICING_API_KEY --auth-header x-api-key
 ```
 
 Validate and cache prices locally.
@@ -184,7 +208,9 @@ costguard pricing refresh --dry-run
 costguard pricing refresh
 ```
 
-Do not use the inference endpoint as the pricing source; pricing refresh calls a catalog endpoint and does not consume LLM tokens.
+Do not use the inference endpoint as the pricing source; pricing refresh calls a catalog endpoint and does not consume LLM tokens. The OpenAI-compatible chat/messages endpoint is not a pricing source.
+
+Pricing refresh stores normalized prices in `config/pricing.yaml` and the raw model catalog in `cache/models.json`; it must not store API keys in either file.
 
 ## Cache
 
@@ -226,6 +252,15 @@ costguard headroom status
 ```
 
 `enabled=False` is expected when `COSTGUARD_HEADROOM_ENABLED=false`. End-to-end Headroom compression needs a real Cline/CostGuard request and therefore consumes LLM quota; run it only when quota is available.
+
+Headroom status fields:
+
+```text
+available=True   package/module can be imported
+compatible=True  Cost Guard found a supported adapter function
+enabled=False    expected when COSTGUARD_HEADROOM_ENABLED=false
+active=False     expected when disabled or when no request is being transformed
+```
 
 ## Attach
 

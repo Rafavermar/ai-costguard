@@ -56,6 +56,7 @@ def test_cg_active_tracks_costguard_use_command(isolated_env):
         non_interactive=True,
         openai_model_cheap="real-cheap",
         openai_model_standard="real-standard",
+        openai_model_strong="real-strong",
     )
     env = config.load_env(isolated_env["home"])
     runner = CliRunner()
@@ -69,6 +70,11 @@ def test_cg_active_tracks_costguard_use_command(isolated_env):
     assert result.exit_code == 0
     assert config.resolve_model_alias("cg-active", isolated_env["home"]) == "cg-standard"
     assert config.model_for_client("cg-active", "cline", env, isolated_env["home"]) == "real-standard"
+
+    result = runner.invoke(app, ["use", "strong"])
+    assert result.exit_code == 0
+    assert config.resolve_model_alias("cg-active", isolated_env["home"]) == "cg-strong"
+    assert config.model_for_client("cg-active", "cline", env, isolated_env["home"]) == "real-strong"
 
 
 def test_proxy_resolves_cg_active_and_keeps_fixed_alias(isolated_env, monkeypatch):

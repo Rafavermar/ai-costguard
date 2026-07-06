@@ -1,6 +1,6 @@
 enabled: true
 mode: api
-endpoint: "https://models.example.com/v1/models"
+endpoint: "<pricing-catalog-url>"
 auth_header: "x-api-key"
 api_key_env: "PRICING_API_KEY"
 cache_ttl_hours: 24

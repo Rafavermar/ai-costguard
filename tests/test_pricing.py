@@ -107,6 +107,8 @@ def test_pricing_refresh_uses_endpoint_api_key_env_and_writes_cache(isolated_env
     assert captured["timeout"] == 12
     assert paths.models_cache_path(isolated_env["home"]).exists()
     assert paths.pricing_path(isolated_env["home"]).exists()
+    assert "super-secret-key" not in paths.models_cache_path(isolated_env["home"]).read_text(encoding="utf-8")
+    assert "super-secret-key" not in paths.pricing_path(isolated_env["home"]).read_text(encoding="utf-8")
     assert pricing.model_pricing("region.provider.model-large", isolated_env["home"])["input_per_million"] == 3.3
 
 

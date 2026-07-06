@@ -98,7 +98,14 @@ uv run costguard pricing status
 
 Full procedure: `docs/WORK_PC_UPDATE.md`.
 
-## Cline Setup
+Use this instead if the global `costguard` command must include Headroom:
+
+```powershell
+uv tool install --editable ".[headroom]" --link-mode=copy --force
+costguard headroom status
+```
+
+## Recommended Cline Configuration
 
 Start the proxy, then paste the printed config into Cline.
 
@@ -117,6 +124,22 @@ Model ID: cg-active
 ```
 
 `cg-active` follows `costguard use cheap|standard|strong`. Use `cg-standard`, `cg-cheap`, or `cg-strong` only for fixed routing.
+
+Validate switching:
+
+```powershell
+costguard use cheap
+costguard status
+costguard cline-config
+```
+
+## Clean Token Measurements
+
+Cline may resend task history, system prompt, tool metadata, selected files, and workspace context. For clean usage checks, start a new task, use a minimal prompt, avoid Retry after secret-filter errors, and then run:
+
+```powershell
+costguard usage today
+```
 
 ## Common Errors
 

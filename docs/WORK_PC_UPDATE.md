@@ -1,4 +1,4 @@
-# Update ai-costguard On A Work PC
+# Update ai-costguard On A Corporate PC
 
 Use this when a corporate laptop has a local checkout of a company fork and you need to update the local CLI without touching client repos or consuming LLM tokens.
 
@@ -13,6 +13,26 @@ Original repo updated
   -> Refresh global costguard command
   -> Run offline validations
 ```
+
+Short version:
+
+```powershell
+git fetch origin --prune
+git pull --ff-only origin main
+costguard stop
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path
+Remove-Item -Recurse -Force .\.venv
+uv sync --extra dev
+uv tool install --editable "." --link-mode=copy --force
+costguard --help
+uv run pytest
+costguard doctor
+costguard pricing status
+costguard headroom status
+costguard cline-config
+```
+
+Use `uv sync --extra dev --extra headroom` and `uv tool install --editable ".[headroom]" --link-mode=copy --force` only when validating Headroom.
 
 ## Rules
 
@@ -57,7 +77,7 @@ Stop the proxy before recreating `.venv`.
 
 ```powershell
 costguard stop
-Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
 ```
 
 Only close processes whose `Path` belongs to this repo or to CostGuard.
@@ -73,6 +93,13 @@ uv sync --extra dev
 
 Expected: `.venv` is created and `ai-costguard` is installed from the local repo path.
 
+If validating Headroom in the repo environment:
+
+```powershell
+uv sync --extra dev --extra headroom
+uv run costguard headroom status
+```
+
 ## 5. Refresh The Global CLI
 
 Run this after every repo update if teammates use `costguard` as a global command.
@@ -83,6 +110,13 @@ costguard --help
 ```
 
 This is the standard CLI update command, not a Headroom-specific command.
+
+If the global command must include Headroom:
+
+```powershell
+uv tool install --editable ".[headroom]" --link-mode=copy --force
+costguard headroom status
+```
 
 Fallback when `--force` is unsupported:
 
@@ -100,13 +134,15 @@ Run checks that do not call an LLM.
 
 ```powershell
 uv run pytest
-uv run costguard --help
+costguard --help
+costguard doctor
+costguard pricing status
+costguard headroom status
+costguard cline-config
 uv run costguard rules test "cat .env"
 uv run costguard rules test "git diff"
 uv run costguard rules test "find ."
-uv run costguard pricing status
 uv run costguard cache status
-uv run costguard headroom status
 ```
 
 Expected: tests pass, `.env` is blocked, noisy commands are rewritten, and status commands return local state.
@@ -138,7 +174,7 @@ If pricing has a separate key:
 
 ```powershell
 $env:PRICING_API_KEY = "<REDACTED>"
-uv run costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+uv run costguard pricing configure --endpoint <pricing-catalog-url> --api-key-env PRICING_API_KEY --auth-header x-api-key
 ```
 
 Validate without writing, then refresh local cache.
@@ -149,7 +185,7 @@ uv run costguard pricing refresh
 uv run costguard pricing status
 ```
 
-Do not use the inference endpoint as `COSTGUARD_PRICING_URL`.
+Do not use the inference endpoint as `COSTGUARD_PRICING_URL`; the OpenAI-compatible chat/messages endpoint is not a pricing source. Pricing refresh must not store API keys in `config/pricing.yaml` or `cache/models.json`.
 
 ## 8. Optional Headroom Check
 
@@ -198,14 +234,26 @@ For Cline model routing, use `Model ID: cg-active` when you want `costguard use 
 
 ## Troubleshooting
 
-`uv sync` access denied:
+`costguard stop` returns Access denied:
+
+```powershell
+Get-Process -Id <PID> -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
+Get-NetTCPConnection -LocalPort 4040 -ErrorAction SilentlyContinue
+```
+
+If no process exists and nothing is listening on the port, it is probably a stale PID or an already-finished process. Do not kill processes blindly.
+
+`uv sync` access denied, `.venv` inconsistent, or `missing RECORD file`:
 
 ```powershell
 costguard stop
-Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
 Remove-Item -Recurse -Force .\.venv
 uv sync --extra dev
 ```
+
+Use `uv sync --extra dev --extra headroom` instead when validating Headroom.
 
 `pip` missing in `.venv`:
 
@@ -213,6 +261,18 @@ uv sync --extra dev
 uv run costguard --help
 uv run pytest
 ```
+
+This is expected in uv-managed environments. Do not switch the normal work-PC flow to direct `pip`.
+
+`uv.lock` appears as untracked after `uv sync`:
+
+```powershell
+git status
+Remove-Item .\uv.lock
+git status
+```
+
+Do not create local commits on the work PC just to add `uv.lock`. If the project decides to version it later, do that in the original repo.
 
 `429 true` from Cline: upstream provider quota/rate limit; validate offline and wait or change tier/credentials.
 
@@ -222,10 +282,21 @@ uv run pytest
 
 - [ ] Company fork synced in GitHub.
 - [ ] Local checkout pulled with `git pull --ff-only origin main`.
+- [ ] Working tree clean.
 - [ ] CostGuard stopped before `.venv` recreation.
+- [ ] No relevant `python`, `uv`, or `costguard` process is locking the repo.
 - [ ] `.venv` recreated with `uv sync --extra dev`.
 - [ ] Global CLI refreshed with `uv tool install --editable "." --link-mode=copy --force`, if used.
+- [ ] If Headroom applies, global CLI installed with `uv tool install --editable ".[headroom]" --link-mode=copy --force`.
+- [ ] `uv run pytest` passes.
+- [ ] `costguard doctor` OK.
+- [ ] `costguard pricing status` checked.
+- [ ] `costguard pricing refresh --dry-run` OK when pricing is configured.
+- [ ] `costguard pricing refresh` OK when pricing is configured.
+- [ ] Cline configured with `Model ID: cg-active`.
+- [ ] `costguard use cheap|standard|strong` tested if model switching matters.
 - [ ] Offline validations passed.
 - [ ] No client repos touched.
 - [ ] No LLM tokens consumed during validation.
 - [ ] No secrets or company endpoints printed or committed.
+- [ ] No local work-PC commits created accidentally.

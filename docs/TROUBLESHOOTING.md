@@ -122,6 +122,18 @@ If `costguard` is not in PATH after editable install, either install it as a too
 
 PowerShell does not always behave like Bash for command chaining. If `&&` fails, run commands separately or use `;`.
 
+## `costguard stop` Access Denied
+
+Check whether the process still exists and whether the proxy port is actually listening:
+
+```powershell
+Get-Process -Id <PID> -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
+Get-NetTCPConnection -LocalPort 4040 -ErrorAction SilentlyContinue
+```
+
+If no process exists and the port is not listening, treat it as a stale PID or already-finished process. Do not kill unrelated Python processes blindly.
+
 ## OneDrive Hardlink Failures
 
 Corporate Windows repos often live under OneDrive. Some installers try to create hardlinks and fail with filesystem errors. Use copy mode:
@@ -132,6 +144,31 @@ uv tool install --editable "." --link-mode=copy
 ```
 
 This avoids hardlink assumptions and keeps the install local to the machine.
+
+## `.venv` Missing RECORD Or Access Denied
+
+Stop Cost Guard, check for live processes, and recreate the environment with uv:
+
+```powershell
+costguard stop
+Get-Process python,uv,costguard -ErrorAction SilentlyContinue | Select-Object Name,Id,Path,StartTime
+Remove-Item -Recurse -Force .\.venv
+uv sync --extra dev
+```
+
+Use `uv sync --extra dev --extra headroom` when validating Headroom.
+
+## `uv.lock` Appears Untracked
+
+For the corporate work-PC update flow, do not create local commits just to add `uv.lock`.
+
+```powershell
+git status
+Remove-Item .\uv.lock
+git status
+```
+
+If the project later decides to version `uv.lock`, do that from the original repo workflow.
 
 ## Pricing Catalog
 
@@ -160,11 +197,12 @@ For work-PC validation, prefer `--api-key-env` so keys stay out of shell history
 
 ```powershell
 $env:PRICING_API_KEY = "<REDACTED>"
-costguard pricing configure --endpoint https://models.example.com/v1/models --api-key-env PRICING_API_KEY --auth-header x-api-key
+costguard pricing configure --endpoint <pricing-catalog-url> --api-key-env PRICING_API_KEY --auth-header x-api-key
 costguard pricing refresh --dry-run
 ```
 
 Do not print or commit real pricing API keys. The refresh command stores normalized model prices in `~/.costguard/config/pricing.yaml` and the raw model catalog in `~/.costguard/cache/models.json`.
+Those files must not contain API keys.
 
 ## Claude Code Settings Look Wrong
 
