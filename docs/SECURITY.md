@@ -74,6 +74,8 @@ Semantic/vector cache is scaffolded only; embeddings are not active in the base 
 
 Headroom can transform request payloads before they reach the upstream model. It is disabled by default and requires the optional `headroom-ai` package or a compatible local adapter. Review Headroom's data handling, model downloads, local cache behavior, and corporate TLS requirements before enabling it in a work environment.
 
+Cost Guard keeps Headroom's conservative coding-agent defaults by default: user messages are not compressed and recent turns are protected. Enable `COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=true` only when the user explicitly accepts that user-provided context may be rewritten, for example in a controlled document/RAG compression test.
+
 ## Do Not Commit Secrets
 
 Never commit:

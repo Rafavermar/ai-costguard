@@ -109,7 +109,7 @@ The preferred integration is the official library API:
 
 - `compress(messages, model=...)`
 
-Cost Guard passes the request `messages` list and the already-resolved upstream model name, then reconstructs the payload from a returned messages list, text result, payload dict, or compatible wrapper. For local/custom adapters, Cost Guard also supports these payload-level functions:
+Cost Guard passes the request `messages` list and the already-resolved upstream model name. Headroom's public contract expects OpenAI/Anthropic-style message dictionaries with `role` and `content`, and returns `CompressResult` with `messages`, `tokens_before`, `tokens_after`, `tokens_saved`, `compression_ratio`, and `transforms_applied` when available. Cost Guard reconstructs the payload from a returned messages list, text result, payload dict, or compatible wrapper. For local/custom adapters, Cost Guard also supports these payload-level functions:
 
 - `compress_payload(payload, ...)`
 - `compress_request(payload, ...)`
@@ -118,7 +118,17 @@ Cost Guard passes the request `messages` list and the already-resolved upstream 
 
 Payload-level functions may return a transformed payload dictionary or mutate the payload in place. Cost Guard passes optional `client` and `home` context when the adapter accepts it. If Headroom is enabled but no compatible adapter is available, the proxy fails with a clear local error rather than silently bypassing compression.
 
-Headroom observability is metadata-only. Usage events store before/after input sizes, estimated before/after input tokens, estimated tokens saved, reduction ratio, skip count, and last skip reason. They do not store prompt or response content. `headroom test --input-shape ...` can also report adapter result keys, normalized result shape, and payload reconstruction status for offline contract debugging. `outputs_reduced` belongs to output limits and is not Headroom evidence. `headroom status` means installed/configured; real compression is proven by positive Headroom savings, not by install status alone.
+Headroom observability is metadata-only. Usage events store before/after input sizes, estimated before/after input tokens, estimated tokens saved, reduction ratio, skip count, and last skip reason. They do not store prompt or response content. `headroom test --input-shape ...` can also report adapter result keys/attributes, normalized result shape, payload reconstruction status, token metrics from `CompressResult`, transforms applied, and metadata keys for offline contract debugging.
+
+Cost Guard keeps Headroom's coding-agent-safe defaults unless changed locally:
+
+```text
+COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=false
+COSTGUARD_HEADROOM_PROTECT_RECENT=4
+COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS=250
+```
+
+Those defaults can produce `skipped_no_change` for a single recent user prompt. `outputs_reduced` belongs to output limits and is not Headroom evidence. `headroom status` means installed/configured; real compression is proven by positive Headroom savings, not by install status alone.
 
 ## Proxy MVP
 

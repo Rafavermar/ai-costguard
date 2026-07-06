@@ -331,7 +331,11 @@ def headroom_disable() -> None:
 
 @headroom_app.command("test")
 def headroom_test(
-    sample: str = typer.Option("repeated", "--sample", help="short, repeated, or long-context."),
+    sample: str = typer.Option(
+        "repeated",
+        "--sample",
+        help="short, repeated, long-context, multi-turn, tool-output, long-code, markdown, logs, or test-failure.",
+    ),
     client: str = typer.Option("cline", "--client", help="cline or claude-code."),
     model: str = typer.Option("cg-active", "--model", help="Cost Guard model alias to resolve for the sample."),
     input_shape: str = typer.Option(
@@ -344,6 +348,26 @@ def headroom_test(
         "--force",
         help="Diagnostic only: run the adapter even if Headroom is disabled in local config.",
     ),
+    compress_user_messages: Optional[bool] = typer.Option(
+        None,
+        "--compress-user-messages/--no-compress-user-messages",
+        help="Diagnostic override for Headroom compress_user_messages.",
+    ),
+    protect_recent: Optional[int] = typer.Option(
+        None,
+        "--protect-recent",
+        help="Diagnostic override for Headroom protect_recent.",
+    ),
+    target_ratio: Optional[float] = typer.Option(
+        None,
+        "--target-ratio",
+        help="Diagnostic override for Headroom target_ratio.",
+    ),
+    min_tokens_to_compress: Optional[int] = typer.Option(
+        None,
+        "--min-tokens-to-compress",
+        help="Diagnostic override for Headroom min_tokens_to_compress.",
+    ),
 ) -> None:
     try:
         _print_headroom(
@@ -353,6 +377,10 @@ def headroom_test(
                 model=model,
                 force_enabled=force,
                 input_shape=input_shape,
+                compress_user_messages=compress_user_messages,
+                protect_recent=protect_recent,
+                target_ratio=target_ratio,
+                min_tokens_to_compress=min_tokens_to_compress,
             )
         )
     except ValueError as exc:

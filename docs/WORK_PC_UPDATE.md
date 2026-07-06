@@ -219,6 +219,9 @@ End-to-end evidence after a safe Cline request:
 
 ```powershell
 costguard headroom test --sample repeated
+costguard headroom test --sample tool-output --force
+costguard headroom test --sample logs --force
+costguard headroom test --sample test-failure --force
 costguard usage today
 ```
 
@@ -241,6 +244,23 @@ headroom_reduction_ratio > 0
 ```
 
 `outputs_reduced` is not Headroom evidence; it means output limits truncated an oversized response. `headroom status` with `enabled=True` and `active=True` only proves the adapter is installed/configured. The input-shape diagnostics print metadata such as adapter result keys and payload reconstruction status, not prompt content.
+
+With the official `headroom.compress` adapter, `messages-list` is the expected compatible shape. `raw-text`, `openai-payload`, and `concatenated-messages-text` can fail with `skipped_adapter_error` because the adapter expects `compress(messages, model=...)`.
+
+Headroom defaults are coding-agent-safe:
+
+```text
+COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=false
+COSTGUARD_HEADROOM_PROTECT_RECENT=4
+COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS=250
+```
+
+Single recent `user` prompts may produce `skipped_no_change`. To test user-message compression offline only:
+
+```powershell
+costguard headroom test --sample repeated --force --compress-user-messages --protect-recent 0
+costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
+```
 
 If `headroom_applied_count` stays `0`, inspect:
 

@@ -16,6 +16,17 @@ ADAPTER_FUNCTIONS = ("compress", "compress_payload", "compress_request", "transf
 HEADROOM_CLIENTS = {"cline", "claude-code"}
 TOOL_KEYS = {"tools", "tool_choice", "functions", "function_call"}
 INPUT_SHAPES = {"openai-payload", "messages-list", "raw-text", "concatenated-messages-text"}
+SAMPLE_NAMES = {
+    "short",
+    "repeated",
+    "long-context",
+    "multi-turn",
+    "tool-output",
+    "long-code",
+    "markdown",
+    "logs",
+    "test-failure",
+}
 INPUT_SHAPE_ALIASES = {
     "openai_chat_payload": "openai-payload",
     "openai-chat-payload": "openai-payload",
@@ -45,6 +56,7 @@ class TransformResult:
     adapter_result_keys: str | None = None
     normalized_result_shape: str | None = None
     payload_reconstruction_status: str | None = None
+    adapter_result_details: dict[str, Any] | None = None
     error_type: str | None = None
 
 
@@ -146,7 +158,7 @@ def transform_payload(
             if not isinstance(messages, list):
                 return TransformResult(payload=payload, applied=False, skipped_reason=SKIPPED_NO_MESSAGES)
             model = str(working_payload.get("model") or "cg-standard")
-            result = _call_compress(adapter_fn, messages, model)
+            result = _call_compress(adapter_fn, messages, model, _headroom_options(home))
         else:
             result = _call_adapter(adapter_fn, working_payload, client, home)
         adapter_result_type = type(result).__name__
@@ -161,10 +173,12 @@ def transform_payload(
             adapter_result_keys="n/a",
             normalized_result_shape="n/a",
             payload_reconstruction_status="error",
+            adapter_result_details=_empty_result_details(),
             error_type=type(exc).__name__,
         )
 
     normalized = _normalize_adapter_result(result, working_payload, adapter_input_shape)
+    result_details = _result_details(result)
     if normalized.status == "unsupported":
         return TransformResult(
             payload=payload,
@@ -176,6 +190,7 @@ def transform_payload(
             adapter_result_keys=_result_keys(result),
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
+            adapter_result_details=result_details,
             error_type="invalid_result",
         )
     transformed = normalized.payload
@@ -191,6 +206,7 @@ def transform_payload(
             adapter_result_keys=_result_keys(result),
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
+            adapter_result_details=result_details,
         )
     return TransformResult(
         payload=transformed,
@@ -201,6 +217,7 @@ def transform_payload(
         adapter_result_keys=_result_keys(result),
         normalized_result_shape=normalized.shape,
         payload_reconstruction_status=normalized.status,
+        adapter_result_details=result_details,
     )
 
 
@@ -211,20 +228,32 @@ def diagnostic(
     home: Path | None = None,
     force_enabled: bool = False,
     input_shape: str = "messages-list",
+    compress_user_messages: bool | None = None,
+    protect_recent: int | None = None,
+    target_ratio: float | None = None,
+    min_tokens_to_compress: int | None = None,
 ) -> dict[str, Any]:
     home = home or paths.costguard_home()
     normalized_input_shape = _normalize_input_shape(input_shape)
+    headroom_options = _headroom_options(
+        home,
+        compress_user_messages=compress_user_messages,
+        protect_recent=protect_recent,
+        target_ratio=target_ratio,
+        min_tokens_to_compress=min_tokens_to_compress,
+    )
     payload = sample_payload(sample, client, model, home)
     before_text = json.dumps(payload)
     before_chars = len(before_text)
     before_tokens = _estimate_tokens(before_chars)
-    result = _diagnose_adapter_shape(payload, client, home, normalized_input_shape, force_enabled)
+    result = _diagnose_adapter_shape(payload, client, home, normalized_input_shape, force_enabled, headroom_options)
     after_text = json.dumps(result.payload)
     after_chars = len(after_text)
     after_tokens = _estimate_tokens(after_chars)
     tokens_saved = max(0, before_tokens - after_tokens)
     adapter = _adapter_callable()
     status_data = status(home)
+    result_details = result.adapter_result_details or _empty_result_details()
     return {
         "sample": sample,
         "client": client,
@@ -240,8 +269,22 @@ def diagnostic(
         "adapter_input_shape": result.adapter_input_shape or (_adapter_input_shape(adapter[0]) if adapter else "n/a"),
         "adapter_result_type": result.adapter_result_type or "n/a",
         "adapter_result_keys": result.adapter_result_keys or "n/a",
+        "adapter_result_attributes": result_details["attributes"],
+        "adapter_result_message_count": result_details["message_count"],
+        "adapter_result_tokens_before": result_details["tokens_before"],
+        "adapter_result_tokens_after": result_details["tokens_after"],
+        "adapter_result_tokens_saved": result_details["tokens_saved"],
+        "adapter_result_compression_ratio": result_details["compression_ratio"],
+        "adapter_result_transforms_applied": result_details["transforms_applied"],
+        "adapter_result_changed_flag": result_details["changed"],
+        "adapter_result_reason": result_details["reason"],
+        "adapter_result_metadata_keys": result_details["metadata_keys"],
         "normalized_result_shape": result.normalized_result_shape or "n/a",
         "payload_reconstruction_status": result.payload_reconstruction_status or "n/a",
+        "headroom_compress_user_messages": headroom_options["compress_user_messages"],
+        "headroom_protect_recent": headroom_options["protect_recent"],
+        "headroom_target_ratio": headroom_options.get("target_ratio", "n/a"),
+        "headroom_min_tokens_to_compress": headroom_options["min_tokens_to_compress"],
         "input_message_count": _message_count(payload),
         "input_chars_before": before_chars,
         "input_chars_after": after_chars,
@@ -262,6 +305,7 @@ def _diagnose_adapter_shape(
     home: Path,
     input_shape: str,
     force_enabled: bool,
+    headroom_options: dict[str, Any],
 ) -> TransformResult:
     input_shape = _normalize_input_shape(input_shape)
     if not config.headroom_enabled(home) and not force_enabled:
@@ -281,7 +325,16 @@ def _diagnose_adapter_shape(
     model = str(original_payload.get("model") or "cg-standard")
     result: Any = None
     try:
-        result = _call_adapter_with_input(adapter_fn, adapter_name, adapter_input, input_shape, model, client, home)
+        result = _call_adapter_with_input(
+            adapter_fn,
+            adapter_name,
+            adapter_input,
+            input_shape,
+            model,
+            client,
+            home,
+            headroom_options,
+        )
     except Exception as exc:
         return TransformResult(
             payload=payload,
@@ -293,10 +346,12 @@ def _diagnose_adapter_shape(
             adapter_result_keys="n/a",
             normalized_result_shape="n/a",
             payload_reconstruction_status="error",
+            adapter_result_details=_empty_result_details(),
             error_type=type(exc).__name__,
         )
 
     normalized = _normalize_adapter_result(result, original_payload, input_shape)
+    result_details = _result_details(result)
     if normalized.status == "unsupported":
         return TransformResult(
             payload=payload,
@@ -308,6 +363,7 @@ def _diagnose_adapter_shape(
             adapter_result_keys=_result_keys(result),
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
+            adapter_result_details=result_details,
             error_type="invalid_result",
         )
     if normalized.payload == original_payload:
@@ -321,6 +377,7 @@ def _diagnose_adapter_shape(
             adapter_result_keys=_result_keys(result),
             normalized_result_shape=normalized.shape,
             payload_reconstruction_status=normalized.status,
+            adapter_result_details=result_details,
         )
     return TransformResult(
         payload=normalized.payload,
@@ -331,6 +388,7 @@ def _diagnose_adapter_shape(
         adapter_result_keys=_result_keys(result),
         normalized_result_shape=normalized.shape,
         payload_reconstruction_status=normalized.status,
+        adapter_result_details=result_details,
     )
 
 
@@ -341,42 +399,210 @@ def sample_payload(
     home: Path | None = None,
 ) -> dict[str, Any]:
     home = home or paths.costguard_home()
-    if sample not in {"short", "repeated", "long-context"}:
-        raise ValueError("Sample must be one of: short, repeated, long-context.")
+    if sample not in SAMPLE_NAMES:
+        raise ValueError(f"Sample must be one of: {', '.join(sorted(SAMPLE_NAMES))}.")
     if client not in HEADROOM_CLIENTS:
         raise ValueError("Client must be one of: cline, claude-code.")
 
     if sample == "short":
-        text = "Summarize this short safe sample in one sentence."
+        messages = [{"role": "user", "content": "Summarize this short safe sample in one sentence."}]
     elif sample == "repeated":
-        text = (
-            "Cost Guard validates budgets, rules, pricing, cache, model routing, and safety. "
-            * 220
-        )
+        messages = [
+            {
+                "role": "user",
+                "content": "Cost Guard validates budgets, rules, pricing, cache, model routing, and safety. " * 220,
+            }
+        ]
+    elif sample == "long-context":
+        messages = [
+            {
+                "role": "user",
+                "content": "\n".join(
+                    f"Section {index}: Cost Guard local context, budget metadata, cache state, and routing notes."
+                    for index in range(1, 260)
+                ),
+            }
+        ]
+    elif sample == "multi-turn":
+        messages = _conversation_with_tool_output(_sample_logs(260), final_request="Summarize the latest root cause.")
+    elif sample == "tool-output":
+        messages = _conversation_with_tool_output(_sample_tool_output(), final_request="Extract the relevant failures.")
+    elif sample == "long-code":
+        messages = _conversation_with_tool_output(_sample_code(), final_request="Point out risky functions.")
+    elif sample == "markdown":
+        messages = _conversation_with_tool_output(_sample_markdown(), final_request="Summarize decisions and open questions.")
+    elif sample == "logs":
+        messages = _conversation_with_tool_output(_sample_logs(360), final_request="Find repeated errors and warnings.")
     else:
-        text = "\n".join(
-            f"Section {index}: Cost Guard local context, budget metadata, cache state, and routing notes."
-            for index in range(1, 260)
-        )
+        messages = _conversation_with_tool_output(_sample_test_failure(), final_request="Explain the failing test briefly.")
 
     env = config.load_env(home)
     alias = config.resolve_model_alias(model, home)
     upstream_model = config.model_for_client(alias, "cline" if client == "cline" else "claude-code", env, home)
     return {
         "model": upstream_model,
-        "messages": [
-            {
-                "role": "user",
-                "content": text,
-            }
-        ],
+        "messages": messages,
         "temperature": 0,
         "max_tokens": 64,
     }
 
 
+def _conversation_with_tool_output(content: str, final_request: str) -> list[dict[str, Any]]:
+    return [
+        {"role": "system", "content": "You are a concise engineering assistant. Prefer short, actionable answers."},
+        {"role": "user", "content": "Investigate this local development issue using the provided safe diagnostic output."},
+        {"role": "assistant", "content": "I will inspect the diagnostic output and summarize only the useful parts."},
+        {"role": "tool", "content": content, "tool_call_id": "costguard_diagnostic_sample"},
+        {"role": "assistant", "content": "I found repeated patterns and a small number of likely root causes."},
+        {"role": "user", "content": "Keep the answer short and avoid restating all raw output."},
+        {"role": "assistant", "content": "Understood. I will provide the minimal diagnosis."},
+        {"role": "user", "content": final_request},
+    ]
+
+
+def _sample_tool_output() -> str:
+    rows = []
+    for index in range(1, 280):
+        status = "ERROR" if index % 37 == 0 else "WARN" if index % 11 == 0 else "INFO"
+        rows.append(
+            json.dumps(
+                {
+                    "step": index,
+                    "status": status,
+                    "component": f"worker-{index % 9}",
+                    "duration_ms": 1200 + (index % 17) * 31,
+                    "message": "retryable timeout while reading local test fixture"
+                    if status == "ERROR"
+                    else "processed batch with repeated metadata",
+                }
+            )
+        )
+    return "\n".join(rows)
+
+
+def _sample_code() -> str:
+    template = """
+def transform_record_{index}(record):
+    value = record.get("value", 0)
+    category = record.get("category", "unknown")
+    if category == "legacy":
+        value = value * 2
+    if value > {limit}:
+        return {{"status": "warn", "value": value, "category": category}}
+    return {{"status": "ok", "value": value, "category": category}}
+"""
+    return "\n".join(template.format(index=index, limit=100 + index) for index in range(1, 90))
+
+
+def _sample_markdown() -> str:
+    sections = []
+    for index in range(1, 120):
+        sections.append(
+            "\n".join(
+                [
+                    f"## Decision Note {index}",
+                    "- Scope: local Cost Guard validation.",
+                    "- Risk: repeated agent context can inflate token usage.",
+                    "- Action: keep rules editable and validate with isolated home paths.",
+                    "- Open question: confirm optional compression evidence before claiming savings.",
+                ]
+            )
+        )
+    return "\n\n".join(sections)
+
+
+def _sample_logs(lines: int) -> str:
+    output = []
+    for index in range(1, lines + 1):
+        level = "ERROR" if index % 53 == 0 else "WARN" if index % 13 == 0 else "INFO"
+        output.append(
+            f"2026-01-01T10:{index % 60:02d}:00Z {level} local-job-{index % 7} "
+            f"partition={index % 19} attempt={index % 5} message='safe repeated validation event'"
+        )
+    return "\n".join(output)
+
+
+def _sample_test_failure() -> str:
+    blocks = []
+    for index in range(1, 80):
+        blocks.append(
+            "\n".join(
+                [
+                    f"FAILED tests/test_pipeline_{index % 6}.py::test_case_{index}",
+                    "AssertionError: expected local status 'ok' but got 'retry'",
+                    "Captured stdout:",
+                    "  validating offline smoke with isolated COSTGUARD_HOME",
+                    "  command output omitted because it repeats the same stack frame",
+                    "Stack:",
+                    f"  File local_module_{index % 4}.py, line {20 + index}, in validate_batch",
+                    "  RuntimeError: safe synthetic retry threshold exceeded",
+                ]
+            )
+        )
+    return "\n\n".join(blocks)
+
+
 def _adapter_input_shape(adapter_name: str) -> str:
     return "messages_list" if adapter_name == "compress" else "payload_dict"
+
+
+def _headroom_options(
+    home: Path,
+    compress_user_messages: bool | None = None,
+    protect_recent: int | None = None,
+    target_ratio: float | None = None,
+    min_tokens_to_compress: int | None = None,
+) -> dict[str, Any]:
+    env = config.load_env(home)
+    options: dict[str, Any] = {
+        "compress_user_messages": _bool_option(
+            env,
+            "COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES",
+            compress_user_messages,
+            default=False,
+        ),
+        "protect_recent": _int_option(env, "COSTGUARD_HEADROOM_PROTECT_RECENT", protect_recent, default=4),
+        "min_tokens_to_compress": _int_option(
+            env,
+            "COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS",
+            min_tokens_to_compress,
+            default=250,
+        ),
+    }
+    ratio = _float_option(env, "COSTGUARD_HEADROOM_TARGET_RATIO", target_ratio)
+    if ratio is not None:
+        options["target_ratio"] = ratio
+    return options
+
+
+def _bool_option(env: dict[str, str], name: str, override: bool | None, default: bool) -> bool:
+    if override is not None:
+        return bool(override)
+    return parse_bool(env.get(name, str(default).lower()), default=default)
+
+
+def _int_option(env: dict[str, str], name: str, override: int | None, default: int) -> int:
+    if override is not None:
+        return int(override)
+    value = env.get(name, "")
+    if value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _float_option(env: dict[str, str], name: str, override: float | None) -> float | None:
+    if override is not None:
+        return float(override)
+    value = env.get(name, "")
+    if value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def _normalize_input_shape(input_shape: str) -> str:
@@ -412,21 +638,33 @@ def _call_adapter_with_input(
     model: str,
     client: str,
     home: Path,
+    headroom_options: dict[str, Any],
 ) -> Any:
     if adapter_name == "compress":
-        return _call_compress(adapter_fn, adapter_input, model)
+        return _call_compress(adapter_fn, adapter_input, model, headroom_options)
     if input_shape == "openai-payload":
         return _call_adapter(adapter_fn, adapter_input, client, home)
     return adapter_fn(adapter_input)
 
 
-def _call_compress(compress_fn: Callable[..., Any], value: Any, model: str) -> Any:
+def _call_compress(
+    compress_fn: Callable[..., Any],
+    value: Any,
+    model: str,
+    headroom_options: dict[str, Any] | None = None,
+) -> Any:
+    options = dict(headroom_options or {})
+    try:
+        return compress_fn(value, model=model, **options)
+    except TypeError:
+        pass
     try:
         return compress_fn(value, model=model)
     except TypeError:
         pass
     try:
-        return compress_fn(value, {"model": model})
+        payload = {"model": model, **options}
+        return compress_fn(value, payload)
     except TypeError:
         pass
     return compress_fn(value)
@@ -523,6 +761,128 @@ def _result_keys(result: Any) -> str:
         result = result[0]
     if isinstance(result, dict):
         return ",".join(sorted(str(key) for key in result.keys())) or "n/a"
+    return "n/a"
+
+
+def _empty_result_details() -> dict[str, Any]:
+    return {
+        "attributes": "n/a",
+        "message_count": "n/a",
+        "tokens_before": "n/a",
+        "tokens_after": "n/a",
+        "tokens_saved": "n/a",
+        "compression_ratio": "n/a",
+        "transforms_applied": "n/a",
+        "changed": "n/a",
+        "reason": "n/a",
+        "metadata_keys": "n/a",
+    }
+
+
+def _result_details(result: Any) -> dict[str, Any]:
+    if isinstance(result, tuple) and result:
+        result = result[0]
+
+    details = _empty_result_details()
+    details["attributes"] = _result_attribute_names(result)
+    details["message_count"] = _result_message_count(result)
+    details["tokens_before"] = _first_result_value(result, "tokens_before", "tokensBefore", "original_tokens")
+    details["tokens_after"] = _first_result_value(result, "tokens_after", "tokensAfter", "compressed_tokens")
+    details["tokens_saved"] = _first_result_value(result, "tokens_saved", "tokensSaved")
+    details["compression_ratio"] = _first_result_value(result, "compression_ratio", "compressionRatio", "savings_percent")
+    details["transforms_applied"] = _result_transforms(result)
+    details["changed"] = _result_changed(result, details["tokens_saved"])
+    details["reason"] = _result_reason(result)
+    details["metadata_keys"] = _result_metadata_keys(result)
+    return details
+
+
+def _result_attribute_names(result: Any) -> str:
+    if result is None or isinstance(result, dict):
+        return "n/a"
+    try:
+        names = sorted(key for key in vars(result) if not key.startswith("_"))
+    except TypeError:
+        names = []
+    return ",".join(names) if names else "n/a"
+
+
+def _first_result_value(result: Any, *names: str) -> Any:
+    if result is None:
+        return "n/a"
+    if isinstance(result, dict):
+        for name in names:
+            if name in result and _safe_scalar(result[name]):
+                return result[name]
+        return "n/a"
+    for name in names:
+        value = getattr(result, name, None)
+        if _safe_scalar(value):
+            return value
+    return "n/a"
+
+
+def _safe_scalar(value: Any) -> bool:
+    return isinstance(value, (bool, int, float)) or (isinstance(value, str) and len(value) <= 160)
+
+
+def _result_message_count(result: Any) -> Any:
+    messages = _result_messages(result)
+    return len(messages) if isinstance(messages, list) else "n/a"
+
+
+def _result_messages(result: Any) -> Any:
+    if isinstance(result, tuple) and result:
+        result = result[0]
+    if isinstance(result, dict):
+        return result.get("messages")
+    return getattr(result, "messages", None)
+
+
+def _result_transforms(result: Any) -> str:
+    value = _first_result_list(result, "transforms_applied", "transformsApplied", "transforms")
+    if not value:
+        return "n/a"
+    safe_values = [str(item) for item in value if isinstance(item, (str, int, float, bool))]
+    return ",".join(safe_values[:20]) if safe_values else "n/a"
+
+
+def _first_result_list(result: Any, *names: str) -> list[Any]:
+    if isinstance(result, dict):
+        for name in names:
+            value = result.get(name)
+            if isinstance(value, list):
+                return value
+        return []
+    for name in names:
+        value = getattr(result, name, None)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _result_changed(result: Any, tokens_saved: Any) -> Any:
+    explicit = _first_result_value(result, "compressed", "changed", "applied")
+    if explicit != "n/a":
+        return explicit
+    if isinstance(tokens_saved, (int, float)):
+        return tokens_saved > 0
+    return "n/a"
+
+
+def _result_reason(result: Any) -> Any:
+    return _first_result_value(result, "noop_reason", "reason", "skip_reason", "status", "error_type")
+
+
+def _result_metadata_keys(result: Any) -> str:
+    metadata: Any = None
+    if isinstance(result, dict):
+        metadata = result.get("metadata")
+    elif result is not None:
+        metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict):
+        keys = sorted(str(key) for key in metadata.keys())
+        return ",".join(keys) if keys else "n/a"
     return "n/a"
 
 

@@ -107,6 +107,35 @@ def _install_metadata_only_headroom_compress(monkeypatch: pytest.MonkeyPatch) ->
     return module
 
 
+def _install_introspective_headroom_compress(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    module = types.ModuleType("headroom")
+
+    class CompressResult:
+        def __init__(self, messages: Any) -> None:
+            self.messages = messages
+            self.tokens_before = 500
+            self.tokens_after = 300
+            self.tokens_saved = 200
+            self.compression_ratio = 0.4
+            self.transforms_applied = ["smart_crusher", "kompress"]
+            self.compressed = True
+            self.noop_reason = ""
+            self.metadata = {"safe_metric": 1}
+
+    def compress(messages: Any, model: str, **kwargs: Any) -> CompressResult:
+        module.calls.append({"messages": messages, "model": model, "kwargs": kwargs})  # type: ignore[attr-defined]
+        if not isinstance(messages, list):
+            return CompressResult(messages)
+        compressed = json.loads(json.dumps(messages))
+        compressed[0]["content"] = "short context"
+        return CompressResult(compressed)
+
+    module.calls = []  # type: ignore[attr-defined]
+    module.compress = compress  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "headroom", module)
+    return module
+
+
 def test_headroom_enable_and_transform_payload(isolated_env, monkeypatch):
     setup_costguard(tool="cline", non_interactive=True)
     _install_fake_headroom(monkeypatch)
@@ -334,12 +363,92 @@ def test_headroom_diagnostic_reports_metrics_without_content(isolated_env, monke
     assert result["changed"] is True
     assert result["adapter"] == "compress"
     assert result["adapter_input_shape"] == "messages_list"
+    assert result["adapter_result_attributes"] == "compression_ratio,messages,tokens_after,tokens_before,tokens_saved"
+    assert result["adapter_result_message_count"] == 1
+    assert result["adapter_result_tokens_before"] == 100
+    assert result["adapter_result_tokens_after"] == 20
+    assert result["adapter_result_tokens_saved"] == 80
+    assert result["adapter_result_compression_ratio"] == 0.8
     assert result["input_message_count"] == 1
     assert result["input_chars_before"] > result["input_chars_after"]
     assert result["tokens_saved"] > 0
     assert result["skip_reason"] == "n/a"
     assert result["content_printed"] is False
     assert "Cost Guard validates" not in json.dumps(result)
+
+
+def test_headroom_diagnostic_passes_compress_options(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    fake_headroom = _install_introspective_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+        compress_user_messages=True,
+        protect_recent=0,
+        target_ratio=0.5,
+        min_tokens_to_compress=10,
+    )
+
+    assert result["changed"] is True
+    assert result["headroom_compress_user_messages"] is True
+    assert result["headroom_protect_recent"] == 0
+    assert result["headroom_target_ratio"] == 0.5
+    assert result["headroom_min_tokens_to_compress"] == 10
+    assert fake_headroom.calls[-1]["kwargs"] == {  # type: ignore[attr-defined]
+        "compress_user_messages": True,
+        "protect_recent": 0,
+        "min_tokens_to_compress": 10,
+        "target_ratio": 0.5,
+    }
+
+
+def test_headroom_diagnostic_reports_incompatible_raw_text_result(isolated_env, monkeypatch):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_introspective_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample="repeated",
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+        input_shape="raw-text",
+    )
+
+    assert result["changed"] is False
+    assert result["skip_reason"] == "skipped_adapter_error"
+    assert result["adapter_result_type"] == "CompressResult"
+    assert result["normalized_result_shape"] == "CompressResult"
+    assert result["payload_reconstruction_status"] == "unsupported"
+    assert result["error_type"] == "invalid_result"
+    assert result["adapter_result_message_count"] == "n/a"
+    assert "Cost Guard validates" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("sample", ["multi-turn", "tool-output", "long-code", "markdown", "logs", "test-failure"])
+def test_headroom_diagnostic_supports_realistic_samples_without_content(isolated_env, monkeypatch, sample):
+    setup_costguard(tool="cline", non_interactive=True, openai_model_standard="real-model")
+    _install_no_change_headroom_compress(monkeypatch)
+    headroom.enable(isolated_env["home"])
+
+    result = headroom.diagnostic(
+        sample=sample,
+        client="cline",
+        model="cg-standard",
+        home=isolated_env["home"],
+    )
+
+    assert result["sample"] == sample
+    assert result["input_message_count"] >= 1
+    assert result["content_printed"] is False
+    rendered = json.dumps(result)
+    assert "safe repeated validation event" not in rendered
+    assert "def transform_record" not in rendered
+    assert "FAILED tests" not in rendered
 
 
 @pytest.mark.parametrize(
@@ -425,6 +534,7 @@ def test_headroom_diagnostic_reports_metadata_only_dict(isolated_env, monkeypatc
     assert result["changed"] is False
     assert result["skip_reason"] == "skipped_no_change"
     assert result["adapter_result_keys"] == "changed,tokens_saved"
+    assert result["adapter_result_attributes"] == "n/a"
     assert result["normalized_result_shape"] == "dict_metadata_only"
     assert result["payload_reconstruction_status"] == "metadata_only"
     assert result["tokens_saved"] == 0

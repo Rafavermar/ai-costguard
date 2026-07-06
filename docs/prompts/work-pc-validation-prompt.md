@@ -305,9 +305,21 @@ uv tool install --editable ".[headroom]" --link-mode=copy --force
 costguard headroom status
 costguard headroom test --sample repeated
 costguard headroom test --sample long-context
+costguard headroom test --sample tool-output --force
+costguard headroom test --sample logs --force
+costguard headroom test --sample test-failure --force
 ```
 
 `headroom test` is offline and does not call the upstream model. It prints metadata only and does not print sample content.
+
+Headroom protects user messages and the latest turns by default:
+
+```text
+COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=false
+COSTGUARD_HEADROOM_PROTECT_RECENT=4
+```
+
+A simple one-message prompt may return `skipped_no_change`. That means the adapter ran but chose not to modify the payload.
 
 If the adapter runs but returns `skipped_no_change`, compare input shapes offline before spending more quota:
 
@@ -319,6 +331,12 @@ costguard headroom test --sample repeated --input-shape concatenated-messages-te
 ```
 
 Read `adapter_result_keys`, `normalized_result_shape`, and `payload_reconstruction_status`.
+
+If you explicitly need a document/RAG-style diagnostic, run this offline only:
+
+```powershell
+costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
+```
 
 End-to-end Headroom evidence requires real Cline/CostGuard traffic and consumes quota:
 

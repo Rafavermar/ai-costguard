@@ -428,6 +428,25 @@ enabled=False    expected when COSTGUARD_HEADROOM_ENABLED=false
 active=False     expected when disabled or when no request is being transformed
 ```
 
+Headroom library contract used by Cost Guard:
+
+```text
+compress(messages, model=...)
+messages: list of OpenAI/Anthropic-style dicts with role/content
+result: CompressResult with messages, tokens_before, tokens_after, tokens_saved,
+        compression_ratio, and transforms_applied when available
+```
+
+Important defaults:
+
+```text
+compress_user_messages=False
+protect_recent=4
+min_tokens_to_compress=250
+```
+
+That means a single recent `user` message can legitimately return `skipped_no_change`. This is expected for coding-agent safety; it avoids rewriting the latest human instruction.
+
 To validate Headroom end-to-end:
 
 ```powershell
@@ -444,6 +463,12 @@ Use offline samples before spending tokens:
 costguard headroom test --sample short
 costguard headroom test --sample repeated
 costguard headroom test --sample long-context
+costguard headroom test --sample multi-turn
+costguard headroom test --sample tool-output
+costguard headroom test --sample long-code
+costguard headroom test --sample markdown
+costguard headroom test --sample logs
+costguard headroom test --sample test-failure
 ```
 
 The command prints only metadata: adapter, requested input shape, adapter result type/keys, normalized result shape, payload reconstruction status, message count, before/after chars, estimated tokens, `changed`, and `skip_reason`. It does not print sample content or call the upstream model.
@@ -457,7 +482,25 @@ costguard headroom test --sample repeated --input-shape openai-payload --force
 costguard headroom test --sample repeated --input-shape concatenated-messages-text --force
 ```
 
-Production traffic uses the official library-style path `compress(messages, model=...)`. The other shapes are diagnostics to identify whether an adapter expects text, a messages list, or a full OpenAI-compatible payload.
+Production traffic uses the official library-style path `compress(messages, model=...)`. The other shapes are diagnostics. With the official `compress` adapter, `raw-text`, `openai-payload`, or `concatenated-messages-text` may report `skipped_adapter_error`; that indicates an incompatible diagnostic input shape, not a Cost Guard routing failure.
+
+To test document/RAG-style compression of user messages offline:
+
+```powershell
+costguard headroom test --sample repeated --force --compress-user-messages --protect-recent 0
+costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
+```
+
+Equivalent local `.env` knobs for real traffic:
+
+```text
+COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=false
+COSTGUARD_HEADROOM_PROTECT_RECENT=4
+COSTGUARD_HEADROOM_TARGET_RATIO=
+COSTGUARD_HEADROOM_MIN_TOKENS_TO_COMPRESS=250
+```
+
+Keep `compress_user_messages=false` unless you explicitly accept that Headroom may rewrite user-provided context. For coding agents, prefer samples or real traffic containing older tool/log outputs.
 
 If Headroom is installed but disabled and you only want an offline adapter check:
 

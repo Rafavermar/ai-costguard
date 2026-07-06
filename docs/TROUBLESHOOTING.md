@@ -315,6 +315,40 @@ costguard headroom test --sample repeated --input-shape concatenated-messages-te
 
 Read `adapter_result_keys`, `normalized_result_shape`, and `payload_reconstruction_status`. Treat Headroom as installed but not compression-validated until `tokens_saved > 0` offline or `headroom_tokens_saved > 0` in real traffic.
 
+Observed interpretation with the official `headroom.compress` adapter:
+
+```text
+messages-list + CompressResult + messages_reconstructed + skipped_no_change
+  Headroom was invoked correctly but returned the same messages.
+
+raw-text/openai-payload/concatenated-messages-text + skipped_adapter_error
+  The diagnostic shape is incompatible with the official compress(messages) API.
+```
+
+Headroom defaults are conservative for coding agents:
+
+```text
+compress_user_messages=False
+protect_recent=4
+min_tokens_to_compress=250
+```
+
+A single recent `user` message is therefore expected to produce no reduction. Try realistic tool/log samples first:
+
+```powershell
+costguard headroom test --sample tool-output --force
+costguard headroom test --sample logs --force
+costguard headroom test --sample test-failure --force
+```
+
+For document/RAG-style diagnostics only:
+
+```powershell
+costguard headroom test --sample long-context --force --compress-user-messages --protect-recent 0
+```
+
+Do not enable `COSTGUARD_HEADROOM_COMPRESS_USER_MESSAGES=true` for real coding traffic unless the user accepts that Headroom may rewrite user-provided context.
+
 Raw local logs are under:
 
 ```text
