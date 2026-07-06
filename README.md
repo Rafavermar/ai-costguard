@@ -13,7 +13,7 @@ It is not a full agent, model provider, cloud service, Docker stack, Postgres se
 ```text
 VS Code
   Cline                -> http://127.0.0.1:4040/v1 -> Cost Guard -> OpenAI-compatible upstream
-  Claude Code CLI path -> http://127.0.0.1:4040    -> Cost Guard -> Anthropic-compatible upstream
+  Claude Code path     -> http://127.0.0.1:4040    -> Cost Guard -> Anthropic-compatible upstream
 ```
 
 ## At A Glance
@@ -84,11 +84,11 @@ These integrations are part of the base package, but they are only activated acc
 | Integration | How It Works |
 | --- | --- |
 | Cline | `costguard cline-config` prints OpenAI-compatible settings to paste into Cline. Cline is not edited automatically. |
-| Claude Code CLI | `setup --tool claude-code` or `setup --tool both` merges Cost Guard env vars and hooks into Claude Code `settings.json` after creating a backup. Local setup, backup, restore, hooks, and Anthropic-compatible proxy routing are covered by tests; real end-to-end CLI validation requires a licensed user/key. |
+| Claude Code | `setup --tool claude-code` or `setup --tool both` merges Cost Guard env vars and hooks into Claude Code `settings.json` after creating a backup. It sets `ANTHROPIC_BASE_URL` to the local proxy and `ANTHROPIC_MODEL` to `cg-active`. Local setup, backup, restore, hooks, alias routing, Anthropic headers, and streaming proxy behavior are covered by tests; real end-to-end validation requires a licensed user/key. |
 | Model aliases | `cg-active` follows the currently selected category; `cg-cheap`, `cg-standard`, and `cg-strong` are fixed categories mapped locally in `.env`. |
 | Hooks | Claude Code `PreToolUse` can block or rewrite risky/noisy tool calls; `PostToolUse` records local metadata. |
 
-Model aliases are intentionally category-based, not provider-based. Each user or company can point `OPENAI_MODEL_CHEAP`, `OPENAI_MODEL_STANDARD`, `OPENAI_MODEL_STRONG`, and their Anthropic-compatible equivalents to the real model IDs approved in that environment. Configure Cline with `cg-active` if you want `costguard use cheap|standard|strong` to switch routing without editing Cline again; configure a fixed alias such as `cg-standard` if you want Cline pinned.
+Model aliases are intentionally category-based, not provider-based. Each user or company can point `OPENAI_MODEL_CHEAP`, `OPENAI_MODEL_STANDARD`, `OPENAI_MODEL_STRONG`, and their Anthropic-compatible equivalents to the real model IDs approved in that environment. Configure Cline or Claude Code with `cg-active` if you want `costguard use cheap|standard|strong` to switch routing without editing the client again; configure a fixed alias such as `cg-standard` if you want a client pinned.
 
 ## Optional Components
 
@@ -127,21 +127,21 @@ Supported and validated today:
 - `cg-active` dynamic routing and fixed aliases `cg-cheap`, `cg-standard`, `cg-strong`.
 - Pricing refresh/cache, budget/usage, rules, output limits, and basic exact-match response cache.
 
-Implemented but pending real end-to-end validation:
+Ready for real Claude Code validation:
 
-- Claude Code CLI through the Anthropic-compatible `/v1/messages` route. Setup/backup/uninstall and proxy routing are tested with mocks; a real smoke needs a licensed Claude Code user and an Anthropic-compatible upstream key.
+- Claude Code through the Anthropic-compatible gateway path. Cost Guard exposes `/v1/messages`, forwards Claude Code/Anthropic headers, supports SSE streaming requests, maps `cg-active`, and records usage/budget metadata. Setup/backup/uninstall and proxy behavior are tested with mocks; a real smoke still needs a licensed Claude Code user and an Anthropic-compatible upstream key.
 
 Experimental:
 
-- Headroom savings evidence, semantic/vector cache, and the official Claude Code VS Code plugin path. The official plugin may manage sessions/settings differently from the CLI and should not be presented as supported until it is proven to route through Cost Guard.
+- Headroom savings evidence, semantic/vector cache, and the official Claude Code VS Code plugin smoke. The plugin is expected to use the same local Anthropic-compatible gateway when it honors Claude Code settings, but it should not be presented as fully validated until a licensed user confirms traffic reaches Cost Guard and usage is recorded.
 
-Recommended enterprise path for beta: use Cline + Cost Guard as the controlled route. If Claude/Haiku/Sonnet/Opus models are exposed by the company gateway through an OpenAI-compatible API, map them to `OPENAI_MODEL_CHEAP`, `OPENAI_MODEL_STANDARD`, and `OPENAI_MODEL_STRONG` and keep using Cline with `cg-active`.
+Recommended enterprise path for beta: use Cline + Cost Guard first because it is already smoke-tested on a work PC. Then validate Claude Code with the same local proxy pattern when an Anthropic-compatible upstream and licensed Claude Code user are available.
 
 ## What It Does
 
 - Runs a localhost proxy on `127.0.0.1:4040`.
 - Supports Cline via OpenAI-compatible `/v1/chat/completions`.
-- Implements an Anthropic-compatible `/v1/messages` proxy route for Claude Code CLI validation.
+- Implements an Anthropic-compatible `/v1/messages` proxy route with streaming support for Claude Code validation.
 - Maps model aliases: dynamic `cg-active`, plus fixed `cg-cheap`, `cg-standard`, and `cg-strong`.
 - Enforces daily/monthly budgets with `warn`, `block-premium`, or `block-all`.
 - Blocks secret-like paths and commands such as `cat .env`.
@@ -168,7 +168,7 @@ Recommended enterprise path for beta: use Cline + Cost Guard as the controlled r
 - It does not require Headroom for the base product; install `ai-costguard[headroom]` or `headroom-ai` separately to enable it.
 - It does not apply Headroom compression unless a compatible adapter is installed and explicitly enabled.
 - It does not provide production semantic/vector cache yet; that remains experimental until embeddings, vector storage, similarity thresholds, and tests are implemented.
-- It does not claim support for the official Claude Code VS Code plugin until a licensed user validates custom endpoint/proxy behavior.
+- It does not claim the official Claude Code VS Code plugin is fully validated until a licensed user confirms custom endpoint/proxy behavior end to end.
 
 ## Install
 

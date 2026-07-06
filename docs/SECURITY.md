@@ -40,7 +40,7 @@ Uninstall restores from the latest clean backup when available, ignores backups 
 
 Claude Code setup should be tested first with `COSTGUARD_CLAUDE_HOME` pointing to an isolated `.tmp` directory. Do not modify real `~/.claude/settings.json` without explicit user approval.
 
-The official Claude Code VS Code plugin may not use the same settings path or environment variables as Claude Code CLI. Treat it as unvalidated until a licensed user confirms it can route through the local Cost Guard proxy.
+The official Claude Code VS Code plugin should be validated with a licensed user before being called supported. The expected safe route is still local: Claude Code settings point to `http://127.0.0.1:4040`, `ANTHROPIC_MODEL=cg-active`, and traffic is confirmed in `costguard usage today`.
 
 ## Reversible Uninstall
 

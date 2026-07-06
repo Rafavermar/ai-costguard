@@ -110,17 +110,29 @@ OPENAI_MODEL_STRONG=<opus-or-strong-model>
 
 This path is validated with Cline and `cg-active`.
 
-**B. Claude Code CLI + Cost Guard + Anthropic-compatible API**
+**B. Claude Code + Cost Guard + Anthropic-compatible API**
 
-Cost Guard implements `/v1/messages`, `ANTHROPIC_UPSTREAM_*`, model mapping, budget/usage, pricing lookup, cache, Headroom path, setup backup, hooks, and uninstall restore. It is covered by mock tests, but real end-to-end validation needs a licensed Claude Code user and an Anthropic-compatible upstream key.
+Cost Guard implements `/v1/messages`, SSE streaming passthrough, Claude Code/Anthropic header forwarding, `ANTHROPIC_UPSTREAM_*`, model mapping, budget/usage, pricing lookup, cache, Headroom path, setup backup, hooks, and uninstall restore. It is covered by mock tests, but real end-to-end validation needs a licensed Claude Code user and an Anthropic-compatible upstream key.
 
 ```text
 ANTHROPIC_UPSTREAM_BASE_URL=
 ANTHROPIC_UPSTREAM_API_KEY=
+ANTHROPIC_UPSTREAM_AUTH_HEADER=x-api-key
+ANTHROPIC_UPSTREAM_AUTH_SCHEME=
 ANTHROPIC_MODEL_CHEAP=
 ANTHROPIC_MODEL_STANDARD=
 ANTHROPIC_MODEL_STRONG=
 ```
+
+`setup --tool claude-code` sets Claude Code to use:
+
+```text
+ANTHROPIC_BASE_URL=http://127.0.0.1:4040
+ANTHROPIC_AUTH_TOKEN=sk-costguard-local
+ANTHROPIC_MODEL=cg-active
+```
+
+For Claude Code model switching, keep `ANTHROPIC_MODEL=cg-active`. Then `costguard use cheap|standard|strong` changes the routed upstream model without editing Claude Code settings. If Claude Code is pinned to `cg-standard`, `cg-cheap`, or `cg-strong`, it behaves like a fixed category.
 
 Validate only with isolated homes first:
 
@@ -136,9 +148,9 @@ Do not touch real `~/.claude/settings.json` unless the user explicitly authorize
 
 **C. Official Claude Code VS Code Plugin**
 
-Do not assume it behaves like Claude Code CLI. It may manage sessions, settings, credentials, and endpoints differently. Treat it as an optional parallel path until a licensed user proves it can route through Cost Guard and that usage/budget are recorded.
+The expected path is the same local Anthropic-compatible gateway: Claude Code settings point to `http://127.0.0.1:4040` and `ANTHROPIC_MODEL=cg-active`. Treat the plugin as pending smoke validation until a licensed user proves that plugin traffic routes through Cost Guard and usage/budget are recorded.
 
-Before declaring Claude Code support, validate: setup backup/restore, real `/v1/messages` request, model alias resolution, usage/budget records, pricing resolution, hooks, and uninstall.
+Before declaring plugin support, validate: setup backup/restore, real `/v1/messages` streaming request, model alias resolution, usage/budget records, pricing resolution, hooks, and uninstall.
 
 ## Daily Checks
 
@@ -175,14 +187,20 @@ cache_cost_saved             estimated local cost avoided because of cache hits
 
 Do not use `outputs_reduced` as cache or Headroom evidence. It belongs to output limits, not request compression or cache hits.
 
-## Model Routing With Cline
+## Model Routing With Cline And Claude Code
 
-Cline sends the Model ID configured in its UI on every request. If Cline is set to `cg-standard`, it keeps asking for `cg-standard` even if Cost Guard active model is `cg-cheap`.
+Cline sends the Model ID configured in its UI on every request. Claude Code sends the model from its settings or UI/session state. If either client is set to `cg-standard`, it keeps asking for `cg-standard` even if Cost Guard active model is `cg-cheap`.
 
-For dynamic switching, configure Cline with:
+For dynamic switching, configure the client with:
 
 ```text
 Model ID: cg-active
+```
+
+For Claude Code this is:
+
+```text
+ANTHROPIC_MODEL=cg-active
 ```
 
 Then switch the local model category; real model IDs stay in local `.env`.
@@ -195,7 +213,7 @@ costguard use strong
 
 Canonical fixed aliases are `cg-cheap`, `cg-standard`, and `cg-strong`. The dynamic alias `cg-active` resolves to whichever fixed alias is currently selected by `costguard use`.
 
-If Cline is configured with `cg-standard`, it stays on standard even after `costguard use cheap`. If Cline is configured with `cg-active`, `costguard use cheap|standard|strong` changes routing without touching Cline.
+If a client is configured with `cg-standard`, it stays on standard even after `costguard use cheap`. If it is configured with `cg-active`, `costguard use cheap|standard|strong` changes routing without touching the client.
 
 Future option, not enabled by default: `COSTGUARD_FORCE_ACTIVE_MODEL=true` could force all incoming requests to the active model regardless of the client-provided model ID.
 

@@ -236,7 +236,8 @@ No imprimas los valores reales.
 Nota sobre modelos Claude/Haiku/Sonnet/Opus:
 - Si esos modelos estan disponibles a traves del endpoint OpenAI-compatible corporativo, usalos primero con Cline + CostGuard mapeando `OPENAI_MODEL_CHEAP`, `OPENAI_MODEL_STANDARD` y `OPENAI_MODEL_STRONG`.
 - El endpoint Anthropic-compatible es otra ruta distinta y solo aplica si el proveedor expone API tipo Anthropic Messages `/v1/messages`.
-- No asumas que el plugin oficial de Claude Code en VS Code usa las mismas variables/configuracion que Claude Code CLI.
+- Para Claude Code, CostGuard usa `ANTHROPIC_MODEL=cg-active` y enruta internamente con `costguard use cheap|standard|strong`.
+- El plugin oficial de Claude Code en VS Code debe validarse con una prueba real: solo dalo por bueno si confirma trafico por `http://127.0.0.1:4040` y aparece en `costguard usage today`.
 
 ## FASE 7 - Validacion post-credenciales
 
@@ -376,16 +377,18 @@ No configures Claude Code hasta que yo lo confirme.
 
 Aclara antes:
 - si vamos a validar Claude Code CLI o el plugin oficial de VS Code;
-- que CostGuard implementa ruta Anthropic-compatible `/v1/messages` para Claude Code CLI;
-- que setup/backup/uninstall y proxy Anthropic-compatible estan cubiertos con tests/mock;
+- que CostGuard implementa ruta Anthropic-compatible `/v1/messages` con streaming para Claude Code;
+- que `ANTHROPIC_MODEL=cg-active` permite switching con `costguard use cheap|standard|strong`;
+- que setup/backup/uninstall, headers, aliases y proxy Anthropic-compatible estan cubiertos con tests/mock;
 - que una validacion real requiere licencia/key y endpoint Anthropic-compatible;
-- que el plugin oficial queda pendiente hasta comprobar que permite endpoint custom/proxy.
+- que el plugin oficial queda pendiente hasta comprobar trafico real por el proxy local.
 
 Si confirmo Claude Code:
 - comprueba si existe `~/.claude/settings.json`
 - explica que se va a modificar
 - confirma que se creara backup
 - primero prueba `costguard setup --tool claude-code` con `COSTGUARD_CLAUDE_HOME` apuntando a `.tmp\claude`
+- confirma que `.env` local contiene `ANTHROPIC_UPSTREAM_BASE_URL`, `ANTHROPIC_UPSTREAM_API_KEY`, `ANTHROPIC_UPSTREAM_AUTH_HEADER`, `ANTHROPIC_UPSTREAM_AUTH_SCHEME` si aplica, y `ANTHROPIC_MODEL_CHEAP/STANDARD/STRONG`
 - ejecuta setup real solo cuando yo lo autorice
 - valida despues con `costguard doctor`
 - valida una request real o controlada a `/v1/messages` si existe key/licencia

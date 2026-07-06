@@ -71,7 +71,7 @@ and `costguard budget status` still shows `mode=warn` and `action=allow`, the re
 
 ## Claude Code Does Not Connect
 
-This section refers to Claude Code CLI configured through `~/.claude/settings.json`. The official Claude Code VS Code plugin may use different settings or credential handling and is not considered validated until proven separately.
+This section refers to Claude Code configured through `~/.claude/settings.json` or the equivalent `COSTGUARD_CLAUDE_HOME`. The VS Code plugin should use the same local gateway only after a licensed-user smoke proves that traffic reaches Cost Guard.
 
 Run:
 
@@ -84,10 +84,12 @@ Inspect `~/.claude/settings.json` or your `COSTGUARD_CLAUDE_HOME` equivalent. Co
 ```text
 ANTHROPIC_BASE_URL=http://127.0.0.1:4040
 ANTHROPIC_AUTH_TOKEN=sk-costguard-local
-ANTHROPIC_MODEL=cg-standard
+ANTHROPIC_MODEL=cg-active
 ```
 
-Also confirm `ANTHROPIC_UPSTREAM_BASE_URL`, `ANTHROPIC_UPSTREAM_API_KEY`, and model variables are set in `.env`.
+Also confirm `ANTHROPIC_UPSTREAM_BASE_URL`, `ANTHROPIC_UPSTREAM_API_KEY`, optional `ANTHROPIC_UPSTREAM_AUTH_HEADER` / `ANTHROPIC_UPSTREAM_AUTH_SCHEME`, and model variables are set in `.env`.
+
+If model switching does not appear to work, confirm Claude Code is not pinned to `cg-standard`, `cg-cheap`, or `cg-strong`. Dynamic switching requires `ANTHROPIC_MODEL=cg-active`.
 
 If your company exposes Claude-family models through an OpenAI-compatible gateway, the simpler beta path is to use Cline with `OPENAI_MODEL_CHEAP/STANDARD/STRONG` mapped to those models and `Model ID: cg-active`.
 
